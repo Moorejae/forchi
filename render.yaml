@@ -5,11 +5,7 @@ services:
     plan: free
     healthCheckPath: /
     envVars:
-      - key: DISCORD_BOT_TOKEN
-        sync: false
-      - key: DISCORD_CLIENT_ID
-        sync: false
-      - key: DISCORD_CLIENT_SECRET
+      - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: GEMINI_KEYS
         sync: false
