@@ -18,6 +18,13 @@ tools/search_hf_spaces.py
 tools/inspect_hf_space.py
 tools/read_ref_space.py
 tools/upload_llm_space.py
+tools/test_llm_endpoint.py
+tools/test_llm_endpoint2.py
+tools/test_llm_endpoint3.py
+tools/list_gemini_models.py
+tools/test_gemini_new.py
+tools/fetch_wf_logs.py
+workflow_log.txt
 *.pdf
 temp/*.png
 temp/*.jpg
