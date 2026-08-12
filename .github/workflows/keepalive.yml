@@ -2,10 +2,9 @@ name: Keep bot service alive
 
 on:
   schedule:
-    # Backup keep-alive ping. Render free tier sleeps after 15 min of inactivity.
-    # NOTE: for a private GitHub repo, Actions free tier is 2000 min/month,
-    # so this runs every 15 min as a *backup*. Use UptimeRobot (5-min) as primary.
-    - cron: "*/15 * * * *"
+    # Ping every 10 minutes to keep the Render free-tier service awake
+    # (Render sleeps after 15 min of HTTP inactivity).
+    - cron: "*/10 * * * *"
   workflow_dispatch: {}
 
 jobs:
@@ -14,7 +13,7 @@ jobs:
     steps:
       - name: Ping ForChi service health endpoint
         run: |
-          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 https://forchi.onrender.com)
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 https://milo-agent.onrender.com)
           echo "Service responded with HTTP $code"
           if [ "$code" != "200" ]; then
             echo "::warning::Service responded with HTTP $code (expected 200)"
