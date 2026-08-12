@@ -1,4 +1,0 @@
-requests==2.32.3
-python-dotenv==1.0.1
-python-telegram-bot[socks]>=20.0
-httpx[socks]>=0.24.0
