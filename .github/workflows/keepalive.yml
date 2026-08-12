@@ -14,14 +14,14 @@ jobs:
     steps:
       - name: Ping Render Telegram bot
         run: |
-          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 https://milo-agent.onrender.com)
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 https://milo-agent.onrender.com || echo "000")
           echo "Render bot responded with HTTP $code"
           if [ "$code" != "200" ]; then
             echo "::warning::Render bot responded with HTTP $code (expected 200)"
           fi
       - name: Ping HF LLM Space (Qwen2.5-7B)
         run: |
-          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 https://slymun-forchi.hf.space/v1/models)
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 https://slymun-forchi.hf.space/v1/models || echo "000")
           echo "HF LLM Space responded with HTTP $code"
           if [ "$code" != "200" ]; then
             echo "::warning::HF LLM Space responded with HTTP $code (expected 200)"
