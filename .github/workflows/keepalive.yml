@@ -1,19 +1,21 @@
-name: Keep HF Space alive
+name: Keep bot service alive
 
 on:
   schedule:
-    # Ping every 20 minutes to prevent the HF Space from sleeping (48h inactivity limit)
-    - cron: "*/20 * * * *"
+    # Backup keep-alive ping. Render free tier sleeps after 15 min of inactivity.
+    # NOTE: for a private GitHub repo, Actions free tier is 2000 min/month,
+    # so this runs every 15 min as a *backup*. Use UptimeRobot (5-min) as primary.
+    - cron: "*/15 * * * *"
   workflow_dispatch: {}
 
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping ForChi HF Space health endpoint
+      - name: Ping ForChi service health endpoint
         run: |
-          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 https://slymun-forchi.hf.space)
-          echo "Space responded with HTTP $code"
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 https://forchi.onrender.com)
+          echo "Service responded with HTTP $code"
           if [ "$code" != "200" ]; then
-            echo "::warning::Space responded with HTTP $code (expected 200)"
+            echo "::warning::Service responded with HTTP $code (expected 200)"
           fi

@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: forchi
+    runtime: docker
+    plan: free
+    healthCheckPath: /
+    envVars:
+      - key: DISCORD_BOT_TOKEN
+        sync: false
+      - key: DISCORD_CLIENT_ID
+        sync: false
+      - key: DISCORD_CLIENT_SECRET
+        sync: false
+      - key: GEMINI_KEYS
+        sync: false
+      - key: HF_TOKEN
+        sync: false
+      - key: FACEBOOK_PAGE_ID
+        sync: false
+      - key: FACEBOOK_PAGE_ACCESS_TOKEN
+        sync: false
+      - key: LINKEDIN_ACCESS_TOKEN
+        sync: false
+      - key: LINKEDIN_AUTHOR_URN
+        sync: false
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_PATH
+        value: ./data/forchi.db

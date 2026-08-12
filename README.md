@@ -17,7 +17,7 @@ FORCHI is Victor's AI Partner and Social Media Automation Engine, now running on
 ```
 Discord (gateway, outbound WebSocket)
    │
-   └── HF Spaces (Docker, always-on)
+   └── Render (Docker web service, free tier + keep-alive ping)
         ├── discord.js bot (message + voice handling)
         ├── 3-layer router: regex gate → LLM extractor → social workflow
         ├── 3-tier LLM waterfall: Gemini (15 keys) → Gemma → Llama
@@ -27,18 +27,22 @@ Discord (gateway, outbound WebSocket)
         └── FLUX.1-dev (image generation)
 ```
 
-## Deploy to HF Spaces
+> **Why not HF Spaces?** HF Spaces blocks outbound connections to Discord (and Telegram) at the network level, and there is no egress setting to change it. Render has unrestricted egress.
 
-1. **Recreate the Space** on Hugging Face (`slymun/forchi`, Docker SDK).
-2. **Add Secrets** in Space Settings → Variables and secrets:
+## Deploy to Render
+
+1. Push this repo to GitHub (`Moorejae/forchi`).
+2. On [render.com](https://render.com) → **New +** → **Blueprint** → connect the GitHub repo.
+3. Render auto-detects `render.yaml` and creates the service.
+4. **Set the secrets** (marked `sync: false` in `render.yaml`) in the Render dashboard:
    - `DISCORD_BOT_TOKEN` — your Discord bot token
-   - `DISCORD_CLIENT_ID`
-   - `DISCORD_CLIENT_SECRET`
    - `GEMINI_KEYS` — comma-separated Gemini API keys
-   - `HF_TOKEN` — Hugging Face access token (for router/Whisper/FLUX)
+   - `HF_TOKEN` — Hugging Face access token
    - `FACEBOOK_PAGE_ID` + `FACEBOOK_PAGE_ACCESS_TOKEN`
    - `LINKEDIN_ACCESS_TOKEN` + `LINKEDIN_AUTHOR_URN`
-3. **Push code**: `git push origin main`
+5. **Keep-alive** (Render free tier sleeps after 15 min of inactivity):
+   - Primary: [UptimeRobot](https://uptimerobot.com) free — monitor `https://forchi.onrender.com` at 5-min interval.
+   - Backup: the GitHub Actions workflow in `.github/workflows/keepalive.yml` (15-min interval).
 
 ## Discord Setup (required)
 
