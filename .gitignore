@@ -11,6 +11,13 @@ tools/extract_blueprints.py
 tools/test_hf_models.py
 tools/check_hf_status.py
 tools/test_hf_serverless.py
+tools/check_qwen_files.py
+tools/check_bartowski.py
+tools/check_llamacpp_version.py
+tools/search_hf_spaces.py
+tools/inspect_hf_space.py
+tools/read_ref_space.py
+tools/upload_llm_space.py
 *.pdf
 temp/*.png
 temp/*.jpg
