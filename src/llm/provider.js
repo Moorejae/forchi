@@ -7,9 +7,10 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 // Tier 3: Llama 3.3 70B via HF router (final fallback)
 
 const GEMINI_MODEL_TIERS = [
-  "gemini-2.0-flash-lite",   // highest quota, cheapest
-  "gemini-2.0-flash",        // second tier
-  "gemini-1.5-flash",        // third tier
+  "gemini-3.1-flash-lite",   // cheapest, highest quota
+  "gemini-3.5-flash-lite",   // newest lite
+  "gemini-3.5-flash",        // balanced
+  "gemini-3.6-flash",        // newest flash
 ];
 
 const HF_FALLBACK_MODELS = [
