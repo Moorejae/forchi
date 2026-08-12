@@ -1,0 +1,24 @@
+{
+  "name": "forchi",
+  "version": "1.0.0",
+  "description": "ForChi Trigger-Based Workflow Agent",
+  "main": "src/bot.js",
+  "scripts": {
+    "start": "node src/bot.js",
+    "dev": "node --watch src/bot.js",
+    "test:router": "node tools/test_router.js"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@huggingface/inference": "^3.0.0",
+    "@langchain/core": "^0.3.0",
+    "@langchain/openai": "^0.4.0",
+    "discord.js": "^14.15.3",
+    "dotenv": "^16.4.5",
+    "form-data": "^4.0.0",
+    "node-cron": "^3.0.3",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7",
+    "zod": "^3.23.8"
+  }
+}
