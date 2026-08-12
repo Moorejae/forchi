@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const { exec } = require("child_process");
 const util = require("util");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const execPromise = util.promisify(exec);
 
@@ -11,11 +12,37 @@ async function convertAudioToWav(inputPath, wavPath) {
   await execPromise(cmd);
 }
 
+function getGeminiKeys() {
+  const raw = process.env.GEMINI_KEYS || "";
+  return raw.split(",").map((k) => k.trim()).filter(Boolean).filter((k) => k.startsWith("AQ."));
+}
+
+// ── Gemini transcription (free, uses working Gemini keys) ─────────────────────
+async function transcribeWavWithGemini(wavBuffer) {
+  const keys = getGeminiKeys();
+  if (!keys.length) {
+    throw new Error("No Gemini keys configured for voice transcription.");
+  }
+
+  console.log("[Voice Transcriber] Transcribing via Gemini (free)...");
+
+  const genAI = new GoogleGenerativeAI(keys[0]);
+  const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash-lite" });
+
+  const result = await model.generateContent([
+    { inlineData: { mimeType: "audio/wav", data: wavBuffer.toString("base64") } },
+    { text: "Transcribe the audio exactly as spoken. Output only the transcription, no commentary." },
+  ]);
+
+  const text = result.response.text();
+  return text.trim();
+}
+
+// ── Fallback: HF Whisper (requires HF Inference credits) ──────────────────────
 async function transcribeWavWithHF(wavBuffer) {
-  // Accept both HF_TOKEN (canonical) and HF_ACCESS_TOKEN (HF Secrets alias) — same as provider.js
   const hfToken = process.env.HF_TOKEN || process.env.HF_ACCESS_TOKEN;
   if (!hfToken) {
-    throw new Error("HF_TOKEN (or HF_ACCESS_TOKEN) environment variable is missing for Whisper API transcription.");
+    throw new Error("HF_TOKEN (or HF_ACCESS_TOKEN) is missing for Whisper fallback.");
   }
 
   console.log("[Whisper Transcriber] Sending audio to Hugging Face Whisper API...");
@@ -63,11 +90,21 @@ async function processVoiceMessage(fileUrl, extHint = "ogg") {
     console.log(`[Voice Engine] Converting ${ext} to 16kHz mono WAV via ffmpeg...`);
     await convertAudioToWav(inputPath, wavPath);
 
-    console.log(`[Voice Engine] Transcribing audio via Hugging Face Whisper API...`);
+    console.log(`[Voice Engine] Transcribing audio...`);
     const wavBuffer = fs.readFileSync(wavPath);
+
+    // Tier 1: Gemini (free, uses working Gemini keys)
+    try {
+      const transcript = await transcribeWavWithGemini(wavBuffer);
+      console.log(`[Voice Engine] Transcription result: "${transcript}"`);
+      return transcript;
+    } catch (err) {
+      console.warn(`[Voice Engine] Gemini transcription failed: ${err.message} — trying HF Whisper...`);
+    }
+
+    // Tier 2: HF Whisper (requires HF credits)
     const transcript = await transcribeWavWithHF(wavBuffer);
     console.log(`[Voice Engine] Transcription result: "${transcript}"`);
-
     return transcript;
   } finally {
     // Clean up temporary audio files

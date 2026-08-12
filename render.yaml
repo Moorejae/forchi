@@ -25,3 +25,5 @@ services:
         value: ./data/forchi.db
       - key: LLM_ENDPOINT
         value: https://slymun-forchi.hf.space
+      - key: ZEROGPU_ENDPOINT
+        value: https://slymun-forchi-img.hf.space

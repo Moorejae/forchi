@@ -1,49 +1,88 @@
 const cron = require("node-cron");
-const db = require("../store/db");
 const socialWorkflow = require("../workflows/social/index");
-const { generateContentAndVisualTopic } = require("../llm/contentGen");
+const { generateFacebookPost, generateLinkedInPost } = require("../llm/contentGen");
+
+// Auto mode: 5 posts/day, 4 hours apart (08:00, 12:00, 16:00, 20:00, 00:00 UTC)
+const AUTO_SCHEDULE = "0 0,8,12,16,20 * * *";
+
+// Rotating themes so posts stay fresh day to day.
+const FB_THEMES = [
+  "life, love, self-worth, and human nature",
+  "marriage, sacrifice, and the value of independence",
+  "hate, healing, and the power of dialogue",
+  "patience, hard work, and protecting what you built",
+  "gratitude, faith, and trusting God through hard times",
+  "the quiet strength of people who keep going unseen",
+];
+
+const LI_TOPICS = [
+  "the latest AI news and what it means for how we work",
+  "a practical AI hack most people can use today",
+  "how AI is reshaping tech companies and jobs",
+  "a bold prediction about AI in the next year",
+  "underrated AI tools most people ignore",
+  "what founders get wrong about adopting AI",
+];
+
+function pick(arr, seed) {
+  return arr[seed % arr.length];
+}
+
+let running = false;
 
 function initScheduler() {
-  console.log("[Scheduler] Initializing campaign cron job...");
+  console.log("[Scheduler] Initializing AUTO mode (5 posts/day, 4h apart, UTC)...");
 
-  // Schedule daily tick (Default: 9:00 AM UTC - Section 5)
   cron.schedule(
-    "0 9 * * *",
+    AUTO_SCHEDULE,
     async () => {
-      console.log("[Scheduler Tick] Checking due campaigns...");
+      if (running) {
+        console.log("[Auto] Previous run still in progress — skipping this tick.");
+        return;
+      }
+      running = true;
       try {
-        const dueCampaigns = await db.getDueCampaigns();
-        console.log(`[Scheduler Tick] Found ${dueCampaigns.length} active campaigns due for posting.`);
+        // Rotate themes by the current hour so each of the 5 daily runs is different.
+        const hour = new Date().getUTCHours();
+        const fbTheme = pick(FB_THEMES, Math.floor(hour / 4));
+        const liTopic = pick(LI_TOPICS, Math.floor(hour / 4) + 1);
 
-        for (const campaign of dueCampaigns) {
-          console.log(`[Scheduler Job] Executing post for Campaign #${campaign.id} (Theme: "${campaign.theme}")`);
+        console.log(`[Auto] ${new Date().toISOString()} — generating posts (FB: "${fbTheme}" | LI: "${liTopic}")`);
 
-          // 1. Generate text + visual imagery keywords
-          const content = await generateContentAndVisualTopic(campaign.theme);
+        // 1. Generate content in the two styles in parallel.
+        const [fb, li] = await Promise.allSettled([
+          generateFacebookPost(fbTheme),
+          generateLinkedInPost(liTopic),
+        ]);
 
-          // 2. Run social posting workflow
-          const result = await socialWorkflow.run({
-            destinations: campaign.destinations,
-            content: content.postText,
-            visualTopic: content.visualTopic
-          });
+        // 2. Post each to its own platform (each generates its own styled image).
+        const fbContent = fb.status === "fulfilled" ? fb.value : { postText: fbTheme, visualTopic: fbTheme };
+        const liContent = li.status === "fulfilled" ? li.value : { postText: liTopic, visualTopic: liTopic };
 
-          console.log(`[Scheduler Job] Campaign #${campaign.id} post completed. Success: ${result.success}`);
+        const results = await Promise.allSettled([
+          socialWorkflow.run({ destinations: ["facebook"], content: fbContent.postText, visualTopic: fbContent.visualTopic }),
+          socialWorkflow.run({ destinations: ["linkedin"], content: liContent.postText, visualTopic: liContent.visualTopic }),
+        ]);
 
-          // 3. Increment days_completed and advance next_run
-          await db.advanceCampaign(campaign.id);
-        }
+        results.forEach((r, i) => {
+          const platform = i === 0 ? "facebook" : "linkedin";
+          if (r.status === "fulfilled" && r.value.success) {
+            console.log(`[Auto] ✅ ${platform} post succeeded`);
+          } else {
+            const err = r.status === "fulfilled" ? r.value.errorSummary : r.reason?.message;
+            console.error(`[Auto] ❌ ${platform} post failed: ${err || "unknown"}`);
+          }
+        });
       } catch (err) {
-        console.error("[Scheduler Tick] Error during campaign execution:", err.message);
+        console.error("[Auto] Error during auto-post:", err.message);
+      } finally {
+        running = false;
       }
     },
-    {
-      scheduled: true,
-      timezone: "UTC" // Section 5: Set cron timezone explicitly
-    }
+    { scheduled: true, timezone: "UTC" }
   );
 
-  console.log("[Scheduler] Cron job registered successfully (0 9 * * * UTC).");
+  console.log(`[Scheduler] Auto mode registered (${AUTO_SCHEDULE} UTC).`);
 }
 
 module.exports = { initScheduler };

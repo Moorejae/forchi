@@ -25,15 +25,57 @@ async function generateImageFree(prompt) {
   return Buffer.from(arrayBuffer);
 }
 
+// ── High-quality image generation (HF ZeroGPU Gradio Space, FLUX.1-dev) ───────
+async function generateZeroGPUImage(prompt) {
+  const base = (process.env.ZEROGPU_ENDPOINT || "https://slymun-forchi-img.hf.space").trim().replace(/\/+$/, "");
+  console.log(`[Image API] Generating image via ZeroGPU (FLUX.1-dev): "${prompt}"...`);
+
+  // 1. Start the gradio job
+  const startRes = await fetch(`${base}/gradio_api/call/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ data: [prompt] }),
+  });
+  if (!startRes.ok) throw new Error(`ZeroGPU start failed: HTTP ${startRes.status}`);
+  const startData = await startRes.json();
+  const eventId = startData.event_id;
+  if (!eventId) throw new Error("ZeroGPU: no event_id in response");
+
+  // 2. Poll the SSE stream until completion (gradio streams result events)
+  const sseRes = await fetch(`${base}/gradio_api/call/generate/${eventId}`);
+  if (!sseRes.ok) throw new Error(`ZeroGPU SSE failed: HTTP ${sseRes.status}`);
+  const text = await sseRes.text();
+
+  // 3. Extract the generated image URL from the completed output
+  // Gradio returns the image as {"path": ..., "url": "https://.../file=..."} in the result.
+  const urlMatches = [...text.matchAll(/"url"\s*:\s*"(https?:[^"\\]+)"/g)].map((m) => m[1].replace(/\\u0026/g, "&"));
+  // Prefer the file= URLs (gradio serves the output image from the file server).
+  const imageUrl = urlMatches.find((u) => u.includes("/file=")) || urlMatches[urlMatches.length - 1];
+  if (!imageUrl) throw new Error("ZeroGPU: could not find image URL in response");
+
+  // 4. Download the image bytes
+  const imgRes = await fetch(imageUrl);
+  if (!imgRes.ok) throw new Error(`ZeroGPU: image download failed HTTP ${imgRes.status}`);
+  const buf = await imgRes.arrayBuffer();
+  return Buffer.from(buf);
+}
+
 async function generateFLUXImage(prompt) {
-  // Tier 1: Pollinations (free) — works without HF credits
+  // Tier 1: ZeroGPU (high quality, free daily GPU quota)
+  try {
+    return await generateZeroGPUImage(prompt);
+  } catch (err) {
+    console.warn(`[Image API] ZeroGPU failed: ${err.message} — falling back to Pollinations...`);
+  }
+
+  // Tier 2: Pollinations (free, always available)
   try {
     return await generateImageFree(prompt);
   } catch (err) {
     console.warn(`[Image API] Pollinations failed: ${err.message} — trying FLUX...`);
   }
 
-  // Tier 2: FLUX via HF router (requires HF Inference credits)
+  // Tier 3: FLUX via HF router (requires HF Inference credits)
   const hfToken = process.env.HF_TOKEN || process.env.HF_ACCESS_TOKEN;
   if (!hfToken) {
     console.warn("[Image API] No HF token — skipping FLUX fallback.");
@@ -130,5 +172,7 @@ module.exports = {
   run,
   buildImagePrompt,
   generateFLUXImage,
-  generateImageFree
+  generateImageFree,
+  generateZeroGPUImage,
+  generateZeroGPUImage
 };
