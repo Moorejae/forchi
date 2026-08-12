@@ -13,7 +13,10 @@ const GEMINI_MODEL_TIERS = [
 ];
 
 const HF_FALLBACK_MODELS = [
-  "google/gemma-3-27b-it",              // Gemma 4 / latest Gemma via HF router
+  "google/gemma-4-26B-A4B-it",          // Gemma 4 26B (latest, via HF router)
+  "google/gemma-3-27b-it",              // Gemma 3 27B (primary HF fallback)
+  "google/gemma-3n-E4B-it",             // Gemma 3n 4B (fast/cheap)
+  "google/gemma-3-12b-it",              // Gemma 3 12B (middle tier)
   "meta-llama/Llama-3.3-70B-Instruct",  // Llama final fallback
   "meta-llama/Llama-3.1-8B-Instruct",   // Llama smaller fallback
 ];
@@ -161,7 +164,9 @@ async function generate(prompt, responseJsonSchema = null) {
 // ── Gemma direct call — for chatChain.js ONLY (blueprint Section 3b) ─────────
 async function callGemmaForChat(prompt) {
   const gemmaModels = [
+    "google/gemma-4-26B-A4B-it",
     "google/gemma-3-27b-it",
+    "google/gemma-3n-E4B-it",
     "meta-llama/Llama-3.3-70B-Instruct",
   ];
 

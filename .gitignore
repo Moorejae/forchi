@@ -8,6 +8,9 @@ temp_media/
 blueprint_extracts/
 pip_error.txt
 tools/extract_blueprints.py
+tools/test_hf_models.py
+tools/check_hf_status.py
+tools/test_hf_serverless.py
 *.pdf
 temp/*.png
 temp/*.jpg
