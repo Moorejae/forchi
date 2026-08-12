@@ -23,3 +23,5 @@ services:
         value: production
       - key: DATABASE_PATH
         value: ./data/forchi.db
+      - key: LLM_ENDPOINT
+        value: https://slymun-forchi.hf.space

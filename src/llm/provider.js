@@ -30,6 +30,48 @@ function getHFToken() {
   return (process.env.HF_TOKEN || process.env.HF_ACCESS_TOKEN || "").trim();
 }
 
+// ── Self-hosted GGUF LLM server (HF Space running llama.cpp) ─────────────────
+// Qwen2.5-7B served via an OpenAI-compatible endpoint on the HF Space.
+// Config via LLM_ENDPOINT (defaults to the ForChi LLM Space).
+function getLLMEndpoint() {
+  return (process.env.LLM_ENDPOINT || "https://slymun-forchi.hf.space").trim().replace(/\/+$/, "");
+}
+
+async function callLLMServer(prompt, isJson = false) {
+  const base = getLLMEndpoint();
+  const model = (process.env.LLM_MODEL || "qwen2.5-7b").trim();
+
+  const systemContent = isJson
+    ? "You are an expert AI parser. Output ONLY raw valid JSON — no markdown, no explanation."
+    : "You are ForChi, Victor's intelligent, direct, and friendly workflow agent. Speak authentically and directly.";
+
+  const res = await fetch(`${base}/v1/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: systemContent },
+        { role: "user", content: prompt },
+      ],
+      max_tokens: 600,
+      temperature: isJson ? 0.0 : 0.7,
+    }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`LLM server HTTP ${res.status}: ${errText.substring(0, 200)}`);
+  }
+
+  const data = await res.json();
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) throw new Error("LLM server returned empty content");
+
+  console.log(`[Provider] ✅ Self-hosted LLM (${model}) succeeded`);
+  return content.trim();
+}
+
 // ── Gemini single-key attempt ─────────────────────────────────────────────────
 async function callGeminiKey(apiKey, prompt, isJson = false) {
   const genAI = new GoogleGenerativeAI(apiKey);
@@ -141,7 +183,7 @@ async function callHFFallback(prompt, isJson = false) {
   return null;
 }
 
-// ── Main generate() — full three-tier waterfall ───────────────────────────────
+// ── Main generate() — full fallback chain ─────────────────────────────────────
 async function generate(prompt, responseJsonSchema = null) {
   const isJson = !!responseJsonSchema;
 
@@ -149,7 +191,15 @@ async function generate(prompt, responseJsonSchema = null) {
   let result = await callGemini(prompt, isJson);
   if (result) return cleanResponse(result, isJson);
 
-  // Tier 2 + 3: HF open-weight (Gemma → Llama)
+  // Tier 2: Self-hosted GGUF (Qwen2.5-7B via HF llama.cpp Space)
+  try {
+    result = await callLLMServer(prompt, isJson);
+    if (result) return cleanResponse(result, isJson);
+  } catch (err) {
+    console.warn(`[Provider] Self-hosted LLM failed: ${err.message}`);
+  }
+
+  // Tier 3: HF open-weight router (Gemma → Llama) — requires paid credits
   result = await callHFFallback(prompt, isJson);
   if (result) return cleanResponse(result, isJson);
 
@@ -161,8 +211,28 @@ async function generate(prompt, responseJsonSchema = null) {
   return "I'm having a moment — give me a few seconds and try again.";
 }
 
-// ── Gemma direct call — for chatChain.js ONLY (blueprint Section 3b) ─────────
+// ── Chat direct call — for chatChain.js ONLY ──────────────────────────────────
+// Chat uses the free self-hosted Qwen (no Gemini quota, no HF credits).
+// Falls back to Gemini, then the HF router (if credits return).
 async function callGemmaForChat(prompt) {
+  // Tier 1: Self-hosted Qwen via HF Space (free)
+  try {
+    console.log("[Chat Provider] Trying self-hosted LLM (Qwen2.5-7B)...");
+    const result = await callLLMServer(prompt, false);
+    return result;
+  } catch (err) {
+    console.warn(`[Chat Provider] Self-hosted LLM failed: ${err.message}`);
+  }
+
+  // Tier 2: Gemini (fast, quota-backed)
+  try {
+    const result = await callGemini(prompt, false);
+    if (result) return result;
+  } catch (err) {
+    console.warn(`[Chat Provider] Gemini fallback failed: ${err.message}`);
+  }
+
+  // Tier 3: HF router (Gemma → Llama) — requires paid credits
   const gemmaModels = [
     "google/gemma-4-26B-A4B-it",
     "google/gemma-3-27b-it",

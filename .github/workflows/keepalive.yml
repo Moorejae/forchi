@@ -2,8 +2,9 @@ name: Keep bot service alive
 
 on:
   schedule:
-    # Ping every 10 minutes to keep the Render free-tier service awake
-    # (Render sleeps after 15 min of HTTP inactivity).
+    # Ping every 10 minutes to keep both services awake.
+    # Render free tier sleeps after 15 min of inactivity.
+    # HF free tier sleeps after 48h of inactivity.
     - cron: "*/10 * * * *"
   workflow_dispatch: {}
 
@@ -11,10 +12,17 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping ForChi service health endpoint
+      - name: Ping Render Telegram bot
         run: |
           code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 https://milo-agent.onrender.com)
-          echo "Service responded with HTTP $code"
+          echo "Render bot responded with HTTP $code"
           if [ "$code" != "200" ]; then
-            echo "::warning::Service responded with HTTP $code (expected 200)"
+            echo "::warning::Render bot responded with HTTP $code (expected 200)"
+          fi
+      - name: Ping HF LLM Space (Qwen2.5-7B)
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 https://slymun-forchi.hf.space/v1/models)
+          echo "HF LLM Space responded with HTTP $code"
+          if [ "$code" != "200" ]; then
+            echo "::warning::HF LLM Space responded with HTTP $code (expected 200)"
           fi
