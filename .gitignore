@@ -25,6 +25,8 @@ tools/list_gemini_models.py
 tools/test_gemini_new.py
 tools/fetch_wf_logs.py
 workflow_log.txt
+tools/test_perchance.py
+tools/test_pollinations.py
 *.pdf
 temp/*.png
 temp/*.jpg

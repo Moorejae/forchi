@@ -11,16 +11,36 @@ function buildImagePrompt(topic, destination) {
   return `${topic}, ${styleSuffix}`;
 }
 
+// ── Free image generation (Pollinations.ai — no API key, no HF credits) ──────
+async function generateImageFree(prompt) {
+  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&nologo=true`;
+  console.log(`[Image API] Generating image via Pollinations (free): "${prompt}"...`);
+
+  const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Pollinations error (${res.status}): ${errText.substring(0, 150)}`);
+  }
+  const arrayBuffer = await res.arrayBuffer();
+  return Buffer.from(arrayBuffer);
+}
+
 async function generateFLUXImage(prompt) {
-  // Accept both HF_TOKEN (canonical) and HF_ACCESS_TOKEN (HF Secrets alias) — same as provider.js
+  // Tier 1: Pollinations (free) — works without HF credits
+  try {
+    return await generateImageFree(prompt);
+  } catch (err) {
+    console.warn(`[Image API] Pollinations failed: ${err.message} — trying FLUX...`);
+  }
+
+  // Tier 2: FLUX via HF router (requires HF Inference credits)
   const hfToken = process.env.HF_TOKEN || process.env.HF_ACCESS_TOKEN;
   if (!hfToken) {
-    console.warn("[FLUX Image API] HF_TOKEN (or HF_ACCESS_TOKEN) is missing. Skipping image generation.");
+    console.warn("[Image API] No HF token — skipping FLUX fallback.");
     return null;
   }
 
   console.log(`[FLUX Image API] Generating image with prompt: "${prompt}"...`);
-
   try {
     const res = await fetch("https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-dev", {
       method: "POST",
@@ -109,5 +129,6 @@ async function run({ destinations = [], content = "", visualTopic = null }) {
 module.exports = {
   run,
   buildImagePrompt,
-  generateFLUXImage
+  generateFLUXImage,
+  generateImageFree
 };
