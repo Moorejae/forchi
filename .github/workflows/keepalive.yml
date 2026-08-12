@@ -1,0 +1,19 @@
+name: Keep HF Space alive
+
+on:
+  schedule:
+    # Ping every 20 minutes to prevent the HF Space from sleeping (48h inactivity limit)
+    - cron: "*/20 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping ForChi HF Space health endpoint
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 https://slymun-forchi.hf.space)
+          echo "Space responded with HTTP $code"
+          if [ "$code" != "200" ]; then
+            echo "::warning::Space responded with HTTP $code (expected 200)"
+          fi
