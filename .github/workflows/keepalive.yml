@@ -14,7 +14,7 @@ jobs:
     steps:
       - name: Ping Render Telegram bot
         run: |
-          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 https://milo-agent.onrender.com || echo "000")
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 https://forchi.onrender.com || echo "000")
           echo "Render bot responded with HTTP $code"
           if [ "$code" != "200" ]; then
             echo "::warning::Render bot responded with HTTP $code (expected 200)"

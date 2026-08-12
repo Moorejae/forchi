@@ -13,7 +13,7 @@
  *   - UptimeRobot  (free, 5-minute interval, 50 monitors)
  *   - cron-job.org (free, 1-minute interval)
  */
-const url = process.env.PING_URL || process.argv[2] || "https://milo-agent.onrender.com";
+const url = process.env.PING_URL || process.argv[2] || "https://forchi.onrender.com";
 
 fetch(url)
   .then((res) => {
