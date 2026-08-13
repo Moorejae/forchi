@@ -5,6 +5,10 @@ on:
     # Ping every 10 minutes to keep both services awake.
     # Render free tier sleeps after 15 min of inactivity.
     # HF free tier sleeps after 48h of inactivity.
+    # NOTE: GitHub Actions free tier only allows ~2000 min/month for private repos;
+    # a 10-min ping uses ~4300 min/month, so this will run out mid-month.
+    # RECOMMENDED: add a free external uptime monitor (UptimeRobot, cron-job.org)
+    # hitting https://forchi.onrender.com every 5 min as the reliable keep-awake.
     - cron: "*/10 * * * *"
   workflow_dispatch: {}
 
@@ -14,15 +18,28 @@ jobs:
     steps:
       - name: Ping Render Telegram bot
         run: |
-          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 https://forchi.onrender.com || echo "000")
+          ping_render() {
+            curl -s -o /dev/null -w "%{http_code}" --max-time 90 https://forchi.onrender.com/ || echo "000"
+          }
+          code=$(ping_render)
           echo "Render bot responded with HTTP $code"
           if [ "$code" != "200" ]; then
-            echo "::warning::Render bot responded with HTTP $code (expected 200)"
+            echo "::warning::Render HTTP $code (may be cold-starting/sleeping). Retrying once in 30s..."
+            sleep 30
+            code=$(ping_render)
+            echo "Render bot retry responded with HTTP $code"
           fi
       - name: Ping HF LLM Space (Qwen2.5-7B)
         run: |
-          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 https://slymun-forchi.hf.space/v1/models || echo "000")
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 90 https://slymun-forchi.hf.space/v1/models || echo "000")
           echo "HF LLM Space responded with HTTP $code"
           if [ "$code" != "200" ]; then
             echo "::warning::HF LLM Space responded with HTTP $code (expected 200)"
+          fi
+      - name: Ping HF image Space (SDXL ZeroGPU)
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 90 https://slymun-forchi-img.hf.space/ || echo "000")
+          echo "HF Image Space responded with HTTP $code"
+          if [ "$code" != "200" ]; then
+            echo "::warning::HF Image Space responded with HTTP $code (expected 200)"
           fi

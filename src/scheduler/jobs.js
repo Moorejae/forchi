@@ -1,6 +1,7 @@
 const cron = require("node-cron");
 const socialWorkflow = require("../workflows/social/index");
 const { generateFacebookPost, generateLinkedInPost } = require("../llm/contentGen");
+const autoMode = require("./autoMode");
 
 // Auto mode: 5 posts/day, 4 hours apart (08:00, 12:00, 16:00, 20:00, 00:00 UTC)
 const AUTO_SCHEDULE = "0 0,8,12,16,20 * * *";
@@ -31,11 +32,15 @@ function pick(arr, seed) {
 let running = false;
 
 function initScheduler() {
-  console.log("[Scheduler] Initializing AUTO mode (5 posts/day, 4h apart, UTC)...");
+  console.log(`[Scheduler] Initializing AUTO mode (5 posts/day, 4h apart, UTC)... (currently ${autoMode.isEnabled() ? "ON ✅" : "OFF ⛔"})`);
 
   cron.schedule(
     AUTO_SCHEDULE,
     async () => {
+      if (!autoMode.isEnabled()) {
+        console.log(`[Auto] Auto mode is OFF — skipping scheduled post at ${new Date().toISOString()}`);
+        return;
+      }
       if (running) {
         console.log("[Auto] Previous run still in progress — skipping this tick.");
         return;

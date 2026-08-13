@@ -5,10 +5,12 @@ const dns = require("dns");
 const { Telegraf } = require("telegraf");
 const { passesGate } = require("./router/gate");
 const { extractPostIntent } = require("./router/extractor");
+const { detectAutoModeToggle } = require("./router/autoModeToggle");
 const { chatReply } = require("./llm/chatChain");
 const socialWorkflow = require("./workflows/social/index");
 const { processVoiceMessage } = require("./voice/transcriber");
 const { initScheduler } = require("./scheduler/jobs");
+const autoMode = require("./scheduler/autoMode");
 const db = require("./store/db");
 
 // Force IPv4 for DNS resolution (avoids IPv6 timeouts in containers)
@@ -51,6 +53,21 @@ db.getDB()
 // ── Core message handler (Blueprint Section 3 — three exits) ──────────────────
 async function handleIncomingText(ctx, text) {
   console.log(`[Inbound Message] From: ${ctx.from?.first_name || "?"} (${ctx.from?.id}) | Text: "${text}"`);
+
+  // Auto-mode toggle command — checked BEFORE gate/extractor so it always works.
+  // Only fires when one line contains BOTH the action ("turn/switch on|off")
+  // and the trigger ("auto mode").
+  const toggle = detectAutoModeToggle(text);
+  if (toggle) {
+    autoMode.setEnabled(toggle.enabled);
+    const state = autoMode.isEnabled() ? "ON ✅" : "OFF ⛔";
+    console.log(`[AutoMode] User ${ctx.from?.id} set auto mode ${toggle.enabled ? "ON" : "OFF"}`);
+    return ctx.reply(
+      toggle.enabled
+        ? `Auto mode is now ${state} — I'll keep posting to Facebook & LinkedIn at 08:00, 12:00, 16:00, 20:00 and 00:00 UTC.`
+        : `Auto mode is now ${state} — I'll stop scheduled posts. You can still send me a post anytime, or say "turn on auto mode" to resume.`
+    );
+  }
 
   // Exit 1: Layer 1 gate fails → chat
   if (!passesGate(text)) {
@@ -132,7 +149,13 @@ server.listen(PORT, () => {
 // ── Long-Polling Launcher with Retry ──────────────────────────────────────────
 let isRunning = false;
 
-async function launchWithRetry(maxRetries = 10, delayMs = 3000) {
+async function launchWithRetry({ baseRetries = 10, conflictRetries = 30, delayMs = 3000 } = {}) {
+  // On deploy overlap, Render may briefly run two instances; Telegram returns
+  // 409 "Conflict" until the old instance dies. Keep retrying well past that window.
+  const isConflict = (msg) => /409|Conflict|terminated by other getUpdates/i.test(msg || "");
+  const maxRetries = isConflict ? conflictRetries : baseRetries;
+  let conflictMode = isConflict;
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       console.log(`[Telegraf] Long-polling launch attempt ${attempt}/${maxRetries}...`);
@@ -141,10 +164,17 @@ async function launchWithRetry(maxRetries = 10, delayMs = 3000) {
       console.log("[Telegraf] ✅ Bot launched successfully in long-polling mode.");
       return;
     } catch (err) {
+      const wasConflict = isConflict(err.message);
       console.error(`[Telegraf] Attempt ${attempt}/${maxRetries} failed: ${err.message}`);
+      if (!conflictMode && wasConflict) {
+        // Switched into conflict mode — extend the budget so we outlast the old instance.
+        conflictMode = true;
+        console.log(`[Telegraf] Detected 409 conflict (deploy overlap) — extending retry window to ${conflictRetries} attempts.`);
+      }
       if (attempt < maxRetries) {
-        console.log(`[Telegraf] Retrying in ${delayMs / 1000}s...`);
-        await new Promise((r) => setTimeout(r, delayMs));
+        const wait = wasConflict ? Math.min(delayMs * 2, 10000) : delayMs;
+        console.log(`[Telegraf] Retrying in ${wait / 1000}s...`);
+        await new Promise((r) => setTimeout(r, wait));
       }
     }
   }
