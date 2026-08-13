@@ -29,6 +29,14 @@ services:
         value: "gemini"
       - key: GROQ_API_KEY
         sync: false
+      - key: SERPER_API_KEY
+        sync: false
+      - key: EXA_API_KEY
+        sync: false
+      - key: FIRECRAWL_API_KEY
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
       - key: LLM_ENDPOINT
         value: https://slymun-forchi.hf.space
       - key: ZEROGPU_ENDPOINT
