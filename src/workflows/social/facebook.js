@@ -1,4 +1,4 @@
-const FormData = require("form-data");
+const { detectImageMime } = require("./imageMime");
 
 async function postToFacebook({ content, imageBuffer }) {
   const pageId = process.env.FACEBOOK_PAGE_ID;
@@ -13,9 +13,13 @@ async function postToFacebook({ content, imageBuffer }) {
 
   // Case 1: Post with Image Buffer (2-call process Graph API - Section 4)
   if (imageBuffer) {
-    // Step 1: Upload photo unpublished
+    // Step 1: Upload photo unpublished.
+    // Use the NATIVE FormData/Blob so fetch sets the multipart boundary correctly.
+    // (The old npm form-data body had no boundary header, so Facebook dropped the
+    //  access_token/source fields and failed with "0 does not resolve to a valid user ID".)
+    const { mime, ext } = detectImageMime(imageBuffer);
     const photoForm = new FormData();
-    photoForm.append("source", imageBuffer, { filename: "post.jpg", contentType: "image/jpeg" });
+    photoForm.append("source", new Blob([imageBuffer], { type: mime }), `post.${ext}`);
     photoForm.append("caption", content || "");
     photoForm.append("published", "false");
     photoForm.append("access_token", pageToken);

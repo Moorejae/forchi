@@ -1,4 +1,5 @@
 // LinkedIn Graph API posting helper
+const { detectImageMime } = require("./imageMime");
 
 async function postToLinkedIn({ content, imageBuffer }) {
   const accessToken = process.env.LINKEDIN_ACCESS_TOKEN;
@@ -52,12 +53,13 @@ async function postToLinkedIn({ content, imageBuffer }) {
 
     console.log(`[LinkedIn API] Registered upload. Asset URN: ${assetUrn}`);
 
-    // Step 2: Upload binary bytes to uploadUrl
+    // Step 2: Upload binary bytes to uploadUrl (declare the actual image type)
+    const { mime: uploadMime } = detectImageMime(imageBuffer);
     const uploadRes = await fetch(uploadUrl, {
       method: "PUT",
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "image/jpeg"
+        "Content-Type": uploadMime
       },
       body: imageBuffer
     });
