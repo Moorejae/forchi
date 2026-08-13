@@ -50,6 +50,25 @@ db.getDB()
   .then(() => initScheduler())
   .catch((err) => console.error("[DB Error]", err.message));
 
+// Chat reply is decoupled from the Telegram handler: we show a live typing
+// indicator and send the answer in the background. This keeps the polling loop
+// fast and avoids any handler timeout killing a slow LLM reply.
+async function handleChat(ctx, text) {
+  console.log("[Routing] Chat Path (background)");
+  ctx.sendChatAction("typing").catch(() => {});
+  const typing = setInterval(() => ctx.sendChatAction("typing").catch(() => {}), 4000);
+
+  chatReply(text)
+    .then(async (reply) => {
+      await ctx.reply(reply);
+    })
+    .catch(async (err) => {
+      console.error("[Bot Error] Chat:", err.message);
+      try { await ctx.reply("Sorry, something went wrong on my end."); } catch (_) {}
+    })
+    .finally(() => clearInterval(typing));
+}
+
 // ── Core message handler (Blueprint Section 3 — three exits) ──────────────────
 async function handleIncomingText(ctx, text) {
   console.log(`[Inbound Message] From: ${ctx.from?.first_name || "?"} (${ctx.from?.id}) | Text: "${text}"`);
@@ -69,11 +88,10 @@ async function handleIncomingText(ctx, text) {
     );
   }
 
-  // Exit 1: Layer 1 gate fails → chat
+  // Exit 1: Layer 1 gate fails → chat (decoupled: instant ack, reply in background)
   if (!passesGate(text)) {
     console.log("[Routing] Gate FAILED → Chat Path");
-    const reply = await chatReply(text);
-    return ctx.reply(reply);
+    return handleChat(ctx, text);
   }
 
   // Exit 2: Layer 2 extractor fails validation → chat
@@ -81,8 +99,7 @@ async function handleIncomingText(ctx, text) {
   const intent = await extractPostIntent(text);
   if (!intent.isPostTrigger) {
     console.log("[Routing] Extractor: not a trigger → Chat Path");
-    const reply = await chatReply(text);
-    return ctx.reply(reply);
+    return handleChat(ctx, text);
   }
 
   // Exit 3: Confirmed trigger → deterministic workflow (Blueprint Section 0)
@@ -119,17 +136,26 @@ bot.on("text", async (ctx) => {
   }
 });
 
-// Blueprint Section 6: Voice → transcribe → same gate/extractor pipeline
+// Blueprint Section 6: Voice → transcribe → same gate/extractor pipeline.
+// Decoupled: typing indicator + background processing (transcribe can be slow).
 bot.on("voice", async (ctx) => {
   try {
+    ctx.sendChatAction("typing").catch(() => {});
+    const typing = setInterval(() => ctx.sendChatAction("typing").catch(() => {}), 4000);
     const fileId = ctx.message.voice.file_id;
     console.log(`[Bot Voice] File ID: ${fileId}`);
     const fileLink = await ctx.telegram.getFileLink(fileId);
-    const transcript = await processVoiceMessage(fileLink.href, "ogg");
-    await handleIncomingText(ctx, transcript);
+
+    processVoiceMessage(fileLink.href, "ogg")
+      .then((transcript) => handleIncomingText(ctx, transcript))
+      .catch((err) => {
+        console.error("[Bot Error] Voice handler:", err.message);
+        ctx.reply("Sorry, I couldn't transcribe that voice note.").catch(() => {});
+      })
+      .finally(() => clearInterval(typing));
   } catch (err) {
     console.error("[Bot Error] Voice handler:", err.message);
-    try { await ctx.reply("Sorry, I couldn't transcribe that voice note."); } catch (_) {}
+    try { await ctx.reply("Sorry, something went wrong on my end."); } catch (_) {}
   }
 });
 
@@ -159,7 +185,7 @@ async function launchWithRetry({ baseRetries = 10, conflictRetries = 30, delayMs
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       console.log(`[Telegraf] Long-polling launch attempt ${attempt}/${maxRetries}...`);
-      await bot.launch();
+      await bot.launch({ handlerTimeout: 600000 }); // 10 min safety net for slow background work
       isRunning = true;
       console.log("[Telegraf] ✅ Bot launched successfully in long-polling mode.");
       return;

@@ -38,7 +38,7 @@ function getLLMEndpoint() {
   return (process.env.LLM_ENDPOINT || "https://slymun-forchi.hf.space").trim().replace(/\/+$/, "");
 }
 
-async function callLLMServer(prompt, isJson = false) {
+async function callLLMServer(prompt, isJson = false, maxTokens = 600) {
   const base = getLLMEndpoint();
   const model = (process.env.LLM_MODEL || "qwen2.5-7b").trim();
 
@@ -55,9 +55,10 @@ async function callLLMServer(prompt, isJson = false) {
         { role: "system", content: systemContent },
         { role: "user", content: prompt },
       ],
-      max_tokens: 600,
+      max_tokens: maxTokens,
       temperature: isJson ? 0.0 : 0.7,
     }),
+    signal: AbortSignal.timeout(180000),
   });
 
   if (!res.ok) {
@@ -73,6 +74,16 @@ async function callLLMServer(prompt, isJson = false) {
   return content.trim();
 }
 
+// Bound a promise so a dead endpoint can never hang the pipeline forever.
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    ),
+  ]);
+}
+
 // ── Gemini single-key attempt ─────────────────────────────────────────────────
 async function callGeminiKey(apiKey, prompt, isJson = false) {
   const genAI = new GoogleGenerativeAI(apiKey);
@@ -86,11 +97,15 @@ async function callGeminiKey(apiKey, prompt, isJson = false) {
         ? "You are an expert AI parser. Output ONLY raw valid JSON — no markdown, no explanation."
         : "You are ForChi, Victor's intelligent, direct, and friendly workflow agent.";
 
-      const result = await model.generateContent({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        systemInstruction: { parts: [{ text: systemInstruction }] },
-        generationConfig: { temperature: isJson ? 0.0 : 0.7, maxOutputTokens: 600 },
-      });
+      const result = await withTimeout(
+        model.generateContent({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          systemInstruction: { parts: [{ text: systemInstruction }] },
+          generationConfig: { temperature: isJson ? 0.0 : 0.7, maxOutputTokens: 600 },
+        }),
+        60000,
+        "Gemini request"
+      );
 
       const text = result.response.text().trim();
       if (!text) throw new Error("Empty response from Gemini");
@@ -156,6 +171,7 @@ async function callHFModel(modelId, prompt, isJson = false) {
       max_tokens: 600,
       temperature: isJson ? 0.0 : 0.7,
     }),
+    signal: AbortSignal.timeout(120000),
   });
 
   if (!res.ok) {
@@ -216,21 +232,37 @@ async function generate(prompt, responseJsonSchema = null) {
 // Chat uses the free self-hosted Qwen (no Gemini quota, no HF credits).
 // Falls back to Gemini, then the HF router (if credits return).
 async function callGemmaForChat(prompt) {
-  // Tier 1: Self-hosted Qwen via HF Space (free)
-  try {
-    console.log("[Chat Provider] Trying self-hosted LLM (Qwen2.5-7B)...");
-    const result = await callLLMServer(prompt, false);
-    return result;
-  } catch (err) {
-    console.warn(`[Chat Provider] Self-hosted LLM failed: ${err.message}`);
+  // Default is Gemini-first (fast, free tier) so chat/voice reply in seconds,
+  // with self-hosted Qwen as the unlimited free fallback.
+  // Set CHAT_PROVIDER=qwen to force the self-hosted model first instead.
+  const preferQwen = (process.env.CHAT_PROVIDER || "gemini").toLowerCase() === "qwen";
+
+  if (preferQwen) {
+    // Forced self-hosted mode: Qwen first, Gemini as fallback.
+    try {
+      console.log("[Chat Provider] Trying self-hosted LLM (Qwen2.5-7B)...");
+      const result = await callLLMServer(prompt, false, 300);
+      return result;
+    } catch (err) {
+      console.warn(`[Chat Provider] Self-hosted LLM failed: ${err.message}`);
+    }
   }
 
-  // Tier 2: Gemini (fast, quota-backed)
+  // Tier 1 (default): Gemini — fast reply in ~1-3s (free tier)
   try {
     const result = await callGemini(prompt, false);
     if (result) return result;
   } catch (err) {
-    console.warn(`[Chat Provider] Gemini fallback failed: ${err.message}`);
+    console.warn(`[Chat Provider] Gemini failed: ${err.message}`);
+  }
+
+  // Tier 2: Self-hosted Qwen via HF Space (free, unlimited — slower on CPU)
+  try {
+    console.log("[Chat Provider] Trying self-hosted LLM (Qwen2.5-7B)...");
+    const result = await callLLMServer(prompt, false, 300);
+    return result;
+  } catch (err) {
+    console.warn(`[Chat Provider] Self-hosted LLM failed: ${err.message}`);
   }
 
   // Tier 3: HF router (Gemma → Llama) — requires paid credits
