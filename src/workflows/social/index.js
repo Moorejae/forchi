@@ -4,8 +4,8 @@ const { generateContentAndVisualTopic, generateFacebookPost, generateLinkedInPos
 
 function buildImagePrompt(topic, destination) {
   const styleSuffix = {
-    facebook: "high-end anime art, lo-fi digital illustration, manga-style painting, soft atmospheric detail, vibrant colors",
-    linkedin: "high-end photorealistic tech image, cyberpunk mecha digital art, futuristic robotics aesthetic, cinematic lighting, ultra detailed"
+    facebook: "ethereal dreamy cinematic digital painting, warm golden hour light, painterly brushstrokes, Lucas Alighieri style, emotional surreal atmosphere, luminous floating particles, rich amber and rose tones, ultra detailed",
+    linkedin: "high-end photorealistic cyberpunk mecha, futuristic robotics, neon cyberpunk city, reflective wet streets, cinematic rim lighting, holographic glow, ultra detailed"
   }[destination] || "high quality digital illustration";
 
   return `${topic}, ${styleSuffix}`;
