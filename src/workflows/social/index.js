@@ -31,8 +31,8 @@ function hfAuthHeaders(extra = {}) {
 
 function buildImagePrompt(topic, destination) {
   const styleSuffix = {
-    facebook: "ethereal dreamy cinematic digital painting, warm golden hour light, painterly brushstrokes, Lucas Alighieri style, emotional surreal atmosphere, luminous floating particles, rich amber and rose tones, ultra detailed",
-    linkedin: "high-end photorealistic cyberpunk mecha, futuristic robotics, neon cyberpunk city, reflective wet streets, cinematic rim lighting, holographic glow, ultra detailed"
+    facebook: "melancholic anime scenery, lo-fi digital painting, Makoto Shinkai style sky realism, painterly textured clouds with soft airbrushing and hard-edged rims, cel-shaded character, moody desaturated blues and slate grays, pale cerulean light breaking through, backlit cinematic lighting, atmospheric haze, introspective mood, high artistic fidelity",
+    linkedin: "cyberpunk mecha biomechanical concept art, matte white and surgical gray monochrome palette, heavily segmented armor plating with exposed hydraulic actuators and micro-wiring, floating dust particles, high-key overexposed bright background, dramatic studio rim lighting, octane render, photorealistic textures, ultra sharp focus, 8k"
   }[destination] || "high quality digital illustration";
 
   return `${topic}, ${styleSuffix}`;
