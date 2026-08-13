@@ -165,7 +165,19 @@ bot.start((ctx) => ctx.reply("ForChi active and listening."));
 const PORT = process.env.PORT || 7860;
 const server = http.createServer((req, res) => {
   res.writeHead(200, { "Content-Type": "application/json" });
-  res.end(JSON.stringify({ status: "healthy", bot: "ForChi", mode: "long-polling" }));
+  const path = (req.url || "/").split("?")[0];
+  if (path === "/status") {
+    res.end(JSON.stringify({
+      status: "healthy",
+      bot: "ForChi",
+      mode: "long-polling",
+      autoMode: autoMode.isEnabled() ? "on" : "off",
+      utc: new Date().toISOString(),
+      schedule: "0 0,8,12,16,20 * * * UTC",
+    }));
+  } else {
+    res.end(JSON.stringify({ status: "healthy", bot: "ForChi", mode: "long-polling" }));
+  }
 });
 
 server.listen(PORT, () => {
