@@ -1,6 +1,6 @@
 const { postToFacebook } = require("./facebook");
 const { postToLinkedIn } = require("./linkedin");
-const { generateContentAndVisualTopic, cleanPostFormatting } = require("../../llm/contentGen");
+const { generateContentAndVisualTopic, generateFacebookPost, generateLinkedInPost, cleanPostFormatting } = require("../../llm/contentGen");
 
 function buildImagePrompt(topic, destination) {
   const styleSuffix = {
@@ -119,9 +119,26 @@ async function run({ destinations = [], content = "", visualTopic = null }) {
   let finalVisualTopic = visualTopic;
 
   if (!finalVisualTopic) {
-    const gen = await generateContentAndVisualTopic(content);
+    // Use the destination-specific generator so manual posts match auto-mode:
+    // FB = Victor's poetic style + guaranteed "Fickle youth", LI = in-depth + hashtags.
+    let gen;
+    if (destinations.length === 1) {
+      gen = destinations[0] === "facebook"
+        ? await generateFacebookPost(finalContent)
+        : await generateLinkedInPost(finalContent);
+    } else {
+      gen = await generateContentAndVisualTopic(finalContent);
+    }
     finalContent = gen.postText || finalContent;
     finalVisualTopic = gen.visualTopic || content;
+  }
+
+  // Safety net: every Facebook post ends with "Fickle youth", no matter the source.
+  if (destinations.includes("facebook")) {
+    const sig = "Fickle youth";
+    if (!finalContent.trim().toLowerCase().endsWith(sig.toLowerCase())) {
+      finalContent = `${finalContent.replace(/\s+$/g, "")}\n\n${sig}`;
+    }
   }
 
   // Final sanity check to guarantee no asterisks or hashtags
