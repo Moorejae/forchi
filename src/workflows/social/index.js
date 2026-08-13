@@ -4,8 +4,8 @@ const { generateContentAndVisualTopic, cleanPostFormatting } = require("../../ll
 
 function buildImagePrompt(topic, destination) {
   const styleSuffix = {
-    facebook: "oil painting style, rich brushstrokes, painterly",
-    linkedin: "futuristic tech illustration, clean digital art, AI and robotics aesthetic, not painterly"
+    facebook: "high-end anime art, lo-fi digital illustration, manga-style painting, soft atmospheric detail, vibrant colors",
+    linkedin: "high-end photorealistic tech image, cyberpunk mecha digital art, futuristic robotics aesthetic, cinematic lighting, ultra detailed"
   }[destination] || "high quality digital illustration";
 
   return `${topic}, ${styleSuffix}`;

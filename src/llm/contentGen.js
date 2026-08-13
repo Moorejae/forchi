@@ -1,18 +1,21 @@
 const provider = require("./provider");
 
-function cleanPostFormatting(text) {
+function cleanPostFormatting(text, { keepHashtags = false } = {}) {
   if (!text) return "";
   let cleaned = text;
 
   // 1. Remove ALL markdown bold/italic asterisks (* and **)
   cleaned = cleaned.replace(/\*/g, "");
 
-  // 2. Remove markdown header hashes (# Header -> Header)
-  cleaned = cleaned.replace(/^#+\s*/gm, "");
-
-  // 3. Remove hashtag clutter or stray hash symbols
-  cleaned = cleaned.replace(/#\w+/g, "");
-  cleaned = cleaned.replace(/#/g, "");
+  if (keepHashtags) {
+    // LinkedIn keeps hashtags — do NOT treat a leading # as a markdown header.
+  } else {
+    // 2. Remove markdown header hashes (# Header -> Header)
+    cleaned = cleaned.replace(/^#+\s*/gm, "");
+    // 3. Remove hashtag clutter or stray hash symbols
+    cleaned = cleaned.replace(/#\w+/g, "");
+    cleaned = cleaned.replace(/#/g, "");
+  }
 
   // 4. Normalize line breaks and spacing
   cleaned = cleaned.replace(/\n{3,}/g, "\n\n").trim();
@@ -46,7 +49,7 @@ STYLE RULES:
 - Directly address the reader ("To my dear girls:", "Love me like this", "You may provide, but you do not own her").
 - Occasionally spiritual (God, Jesus, a shepherd saving a lamb) but always sincere, never preachy.
 - Authentic and human — never robotic, never corporate, never AI-sounding. It must feel like a real person's genuine heart.
-- May end with the signature: Fickle youth
+- ALWAYS end with the signature line exactly: Fickle youth
 - NO hashtags, NO markdown symbols, NO emojis, NO bullet points.
 
 Write a completely NEW, original post about the given theme in this exact voice.
@@ -55,15 +58,15 @@ Return JSON in this exact format:
 { "postText": "...", "visualTopic": "4-8 word visual imagery phrase" }`;
 
 // ── Auto-mode: LinkedIn post about tech/AI ─────────────────────────────────────
-const LINKEDIN_AUTO_PROMPT = `You are a sharp AI/tech industry observer posting engaging content about artificial intelligence, tech companies, and daily AI hacks.
+const LINKEDIN_AUTO_PROMPT = `You are a sharp AI/tech industry observer writing in-depth, high-value LinkedIn posts about artificial intelligence, tech companies, and practical daily AI hacks.
 
 STYLE RULES:
-- Professional but conversational and confident.
-- Practical: share actionable AI tips, hacks, and workflows people can use today.
-- Comment on AI news, tech companies, and industry trends with a fresh, opinionated take.
-- Ask a provocative question or make a bold claim to spark discussion.
-- Short, punchy paragraphs — easy to skim on mobile.
-- NO hashtag spam, NO emojis, NO markdown, NO clichés.
+- Professional, confident, conversational — NEVER poetic or emotional like a personal journal. This is analytical, educational, opinionated content.
+- GO DEEP: give real substance — concrete examples, real numbers, real tool names, step-by-step workflows, and actionable takeaways. The reader should learn something specific they can use today.
+- Structure: a strong opening hook, a body with 2-4 in-depth points in short punchy paragraphs, and a closing takeaway or provocative question.
+- Comment on AI news / tech companies with a fresh, opinionated angle.
+- END the post with 3-6 high-converting, relevant hashtags on their own final line(s) (e.g. #AI #ArtificialIntelligence #TechNews #MachineLearning #Productivity) — pick the most relevant to the topic.
+- NO emojis, NO markdown symbols (* or ** or # headers), NO clichés, NO fluff.
 
 Write a completely NEW, original post about the given topic.
 
@@ -71,30 +74,34 @@ Return JSON in this exact format:
 { "postText": "...", "visualTopic": "4-8 word visual imagery phrase" }`;
 
 async function generateFacebookPost(topic) {
-  const prompt = `${FACEBOOK_AUTO_PROMPT}\n\nTheme: "${topic}"`;
-  return generateStructured(prompt, topic);
+  const result = await generateStructured(`${FACEBOOK_AUTO_PROMPT}\n\nTheme: "${topic}"`, topic);
+  // Guarantee the "Fickle youth" signature at the bottom of EVERY Facebook post.
+  const sig = "Fickle youth";
+  const base = result.postText.replace(/\s+$/g, "").replace(new RegExp(`\\s*${sig}\\s*$`, "i"), "");
+  result.postText = `${base.trim()}\n\n${sig}`;
+  return result;
 }
 
 async function generateLinkedInPost(topic) {
-  const prompt = `${LINKEDIN_AUTO_PROMPT}\n\nTopic: "${topic}"`;
-  return generateStructured(prompt, topic);
+  // keepHashtags=true so LinkedIn hashtags survive cleanup (Facebook strips them).
+  return generateStructured(`${LINKEDIN_AUTO_PROMPT}\n\nTopic: "${topic}"`, topic, { keepHashtags: true });
 }
 
 // Shared helper: call provider, parse JSON, fall back gracefully.
-async function generateStructured(prompt, fallbackTopic) {
+async function generateStructured(prompt, fallbackTopic, opts = {}) {
   try {
     const rawJson = await provider.generate(prompt, { type: "object" });
     const cleaned = rawJson.replace(/```json\n?|\n?```/g, "").trim();
     const parsed = JSON.parse(cleaned);
 
-    const postText = cleanPostFormatting(parsed.postText || fallbackTopic);
+    const postText = cleanPostFormatting(parsed.postText || fallbackTopic, opts);
     const visualTopic = parsed.visualTopic || fallbackTopic;
 
     return { postText, visualTopic };
   } catch (err) {
     console.warn("[contentGen] Failed to generate structured post content:", err.message);
     return {
-      postText: cleanPostFormatting(fallbackTopic),
+      postText: cleanPostFormatting(fallbackTopic, opts),
       visualTopic: fallbackTopic
     };
   }
