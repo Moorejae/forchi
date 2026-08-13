@@ -105,6 +105,12 @@ Telegram voice (.ogg) → **Gemini direct transcription** (no ffmpeg needed) →
 ### 4.9 Health / status
 - `/status` endpoint reports auto-mode state, UTC time, schedule.
 
+### 4.10 Web search grounding (current events)
+- Chat auto-detects factual/current questions (who/what/when/where/why/how + latest/current/news/202x/?) and **searches the web** before answering.
+- **Fallback loop:** Serper (Google) -> Exa -> Firecrawl -> Tavily -> **DuckDuckGo** (free, last resort). Skips missing keys; first provider with results wins.
+- Search snippets are injected as context so the LLM answers from **live data** instead of stale training knowledge (e.g. "Anthropic's latest model" -> Claude Mythos 5, not Claude 3.5).
+- Keys in env: `SERPER_API_KEY`, `EXA_API_KEY`, `FIRECRAWL_API_KEY`, `TAVILY_API_KEY` (note: Tavily key was 401, kept last).
+
 ---
 
 ## 5. Codebase Map
@@ -118,7 +124,8 @@ src/
     autoModeToggle.js       # "turn/switch on/off auto mode" detector
   llm/
     provider.js             # Gemini waterfall → Qwen → HF router; chat (Gemini-first)
-    chatChain.js            # chat framing + chatReply
+    chatChain.js            # chat framing + chatReply + web grounding hook
+    webSearch.js            # search fallback loop (Serper→Exa→Firecrawl→Tavily→DuckDuckGo)
     contentGen.js           # FB/LI generators, cleanPostFormatting, Fickle youth
   scheduler/
     jobs.js                 # 5×/day auto scheduler
@@ -170,6 +177,7 @@ src/
 | `HOSTED_FLUX_ENDPOINT` | Hosted FLUX Space URL | optional |
 | `HOSTED_IMG_ENDPOINT` / `HOSTED_IMG_API` | Hosted SDXL Space URL/api | optional |
 | `GROQ_API_KEY` | Groq Whisper fallback | optional |
+| `SERPER_API_KEY` / `EXA_API_KEY` / `FIRECRAWL_API_KEY` / `TAVILY_API_KEY` | Web search providers (chat grounding) | optional |
 | `AUTO_MODE_DEFAULT` | Initial auto mode (default true) | optional |
 | `CHAT_PROVIDER` | `gemini` (default) or `qwen` | optional |
 | `DATABASE_PATH` / `PORT` / `NODE_ENV` | Runtime | ✅ |
