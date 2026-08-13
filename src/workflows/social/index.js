@@ -1,6 +1,33 @@
 const { postToFacebook } = require("./facebook");
 const { postToLinkedIn } = require("./linkedin");
 const { generateContentAndVisualTopic, generateFacebookPost, generateLinkedInPost, cleanPostFormatting } = require("../../llm/contentGen");
+const { detectImageMime } = require("./imageMime");
+const sharp = require("sharp");
+
+// Facebook/LinkedIn accept JPEG + PNG (not WebP). Hosted FLUX returns WebP, so we
+// normalize any non-JPEG/PNG image to a high-quality JPEG before posting.
+async function normalizeImage(buf) {
+  if (!buf || buf.length < 4) return buf;
+  try {
+    const { mime } = detectImageMime(buf);
+    if (mime === "image/jpeg" || mime === "image/png") return buf;
+    console.log(`[Image API] Converting ${mime} -> JPEG for platform compatibility...`);
+    return await sharp(buf).rotate().jpeg({ quality: 92 }).toBuffer();
+  } catch (err) {
+    console.warn("[Image API] Image normalize failed, using as-is:", err.message);
+    return buf;
+  }
+}
+
+// ZeroGPU attributes GPU allocation to the caller's HF account via this header.
+// Without it, calls land in the anonymous pool (2 min/day, quickly exhausted) and
+// fail instantly with "event: error". With it, they use the account's PRO quota.
+function hfAuthHeaders(extra = {}) {
+  const token = process.env.HF_ACCESS_TOKEN || process.env.HF_TOKEN;
+  const h = { ...extra };
+  if (token) h["x-hf-authorization"] = `Bearer ${token}`;
+  return h;
+}
 
 function buildImagePrompt(topic, destination) {
   const styleSuffix = {
@@ -21,7 +48,7 @@ async function generateHostedImage(prompt) {
   // 1. Start the gradio job (predict = [prompt, guidance, seed])
   const startRes = await fetch(`${base}/gradio_api/call/${apiName}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: hfAuthHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ data: [prompt, 0.0, Math.floor(Math.random() * 1e8)] }),
     signal: AbortSignal.timeout(60000),
   });
@@ -30,7 +57,7 @@ async function generateHostedImage(prompt) {
   if (!eventId) throw new Error("Hosted: no event_id in response");
 
   // 2. Read the SSE stream (blocks until the job completes)
-  const sseRes = await fetch(`${base}/gradio_api/call/${apiName}/${eventId}`, { signal: AbortSignal.timeout(90000) });
+  const sseRes = await fetch(`${base}/gradio_api/call/${apiName}/${eventId}`, { headers: hfAuthHeaders(), signal: AbortSignal.timeout(90000) });
   if (!sseRes.ok) throw new Error(`Hosted SSE failed: HTTP ${sseRes.status}`);
   const text = await sseRes.text();
 
@@ -40,8 +67,40 @@ async function generateHostedImage(prompt) {
   if (!imageUrl) throw new Error("Hosted: could not find image URL in response");
 
   // 4. Download the image bytes
-  const imgRes = await fetch(imageUrl, { signal: AbortSignal.timeout(60000) });
+  const imgRes = await fetch(imageUrl, { headers: hfAuthHeaders(), signal: AbortSignal.timeout(60000) });
   if (!imgRes.ok) throw new Error(`Hosted: image download failed HTTP ${imgRes.status}`);
+  return Buffer.from(await imgRes.arrayBuffer());
+}
+
+// ── Hosted FLUX.1-dev (KingNish/Realtime-FLUX, 24/7) — FLUX quality via Gradio API ──
+async function generateHostedFLUXImage(prompt) {
+  const base = (process.env.HOSTED_FLUX_ENDPOINT || "https://kingnish-realtime-flux.hf.space").trim().replace(/\/+$/, "");
+  console.log(`[Image API] Generating via hosted FLUX: "${prompt}"...`);
+
+  // generate_image = [prompt, seed, width, height]
+  const startRes = await fetch(`${base}/gradio_api/call/generate_image`, {
+    method: "POST",
+    headers: hfAuthHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ data: [prompt, Math.floor(Math.random() * 1e8), 1024, 1024] }),
+    signal: AbortSignal.timeout(60000),
+  });
+  if (!startRes.ok) throw new Error(`Hosted FLUX start failed: HTTP ${startRes.status}`);
+  const { event_id: eventId } = await startRes.json();
+  if (!eventId) throw new Error("Hosted FLUX: no event_id in response");
+
+  const sseRes = await fetch(`${base}/gradio_api/call/generate_image/${eventId}`, {
+    headers: hfAuthHeaders(),
+    signal: AbortSignal.timeout(120000),
+  });
+  if (!sseRes.ok) throw new Error(`Hosted FLUX SSE failed: HTTP ${sseRes.status}`);
+  const text = await sseRes.text();
+
+  const urlMatches = [...text.matchAll(/"url"\s*:\s*"(https?:[^"\\]+)"/g)].map((m) => m[1].replace(/\\u0026/g, "&"));
+  const imageUrl = urlMatches.find((u) => u.includes("/file=")) || urlMatches[urlMatches.length - 1];
+  if (!imageUrl) throw new Error("Hosted FLUX: could not find image URL in response");
+
+  const imgRes = await fetch(imageUrl, { headers: hfAuthHeaders(), signal: AbortSignal.timeout(60000) });
+  if (!imgRes.ok) throw new Error(`Hosted FLUX download failed HTTP ${imgRes.status}`);
   return Buffer.from(await imgRes.arrayBuffer());
 }
 
@@ -67,7 +126,7 @@ async function generateZeroGPUImage(prompt) {
   // 1. Start the gradio job
   const startRes = await fetch(`${base}/gradio_api/call/generate`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: hfAuthHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ data: [prompt] }),
   });
   if (!startRes.ok) throw new Error(`ZeroGPU start failed: HTTP ${startRes.status}`);
@@ -76,7 +135,7 @@ async function generateZeroGPUImage(prompt) {
   if (!eventId) throw new Error("ZeroGPU: no event_id in response");
 
   // 2. Poll the SSE stream until completion (gradio streams result events)
-  const sseRes = await fetch(`${base}/gradio_api/call/generate/${eventId}`);
+  const sseRes = await fetch(`${base}/gradio_api/call/generate/${eventId}`, { headers: hfAuthHeaders() });
   if (!sseRes.ok) throw new Error(`ZeroGPU SSE failed: HTTP ${sseRes.status}`);
   const text = await sseRes.text();
 
@@ -88,35 +147,43 @@ async function generateZeroGPUImage(prompt) {
   if (!imageUrl) throw new Error("ZeroGPU: could not find image URL in response");
 
   // 4. Download the image bytes
-  const imgRes = await fetch(imageUrl);
+  const imgRes = await fetch(imageUrl, { headers: hfAuthHeaders() });
   if (!imgRes.ok) throw new Error(`ZeroGPU: image download failed HTTP ${imgRes.status}`);
   const buf = await imgRes.arrayBuffer();
   return Buffer.from(buf);
 }
 
 async function generateImageWithFallback(prompt) {
-  // Tier 1: Hosted SDXL-Lightning (24/7, reliable, 1024x1024) — no GPU hosting needed
+  // Tier 1: Hosted FLUX.1-dev (KingNish, 24/7) — best quality, uses the account's
+  // PRO ZeroGPU quota via the x-hf-authorization header.
+  try {
+    return await generateHostedFLUXImage(prompt);
+  } catch (err) {
+    console.warn(`[Image API] Hosted FLUX failed: ${err.message} — trying hosted SDXL-Lightning...`);
+  }
+
+  // Tier 2: Hosted SDXL-Lightning (radames, 24/7, reliable, 1024x1024)
   try {
     return await generateHostedImage(prompt);
   } catch (err) {
     console.warn(`[Image API] Hosted SDXL-Lightning failed: ${err.message} — trying our ZeroGPU Space...`);
   }
 
-  // Tier 2: Our own ZeroGPU Space (FLUX/DreamShaper, when its GPU allocation is healthy)
+  // Tier 3: Our own ZeroGPU Space (fp8 FLUX / DreamShaper)
   try {
     return await generateZeroGPUImage(prompt);
   } catch (err) {
     console.warn(`[Image API] ZeroGPU failed: ${err.message} — falling back to Pollinations...`);
   }
 
-  // Tier 3: Pollinations (free, always available)
+  // Tier 4: Pollinations (free, always available)
   try {
     return await generateImageFree(prompt);
   } catch (err) {
     console.warn(`[Image API] Pollinations failed: ${err.message} — trying FLUX router...`);
   }
 
-  // Tier 4: FLUX via HF router (requires HF Inference credits)
+  // Tier 5: FLUX via HF router (requires HF Inference credits)
   const hfToken = process.env.HF_TOKEN || process.env.HF_ACCESS_TOKEN;
   if (!hfToken) {
     console.warn("[Image API] No HF token — skipping FLUX fallback.");
@@ -189,7 +256,8 @@ async function run({ destinations = [], content = "", visualTopic = null }) {
   const tasks = destinations.map(async (dest) => {
     try {
       const imagePrompt = buildImagePrompt(finalVisualTopic, dest);
-      const imageBuffer = await generateImageWithFallback(imagePrompt);
+      const rawImage = await generateImageWithFallback(imagePrompt);
+      const imageBuffer = await normalizeImage(rawImage);
 
       const postFn = dest === "facebook" ? postToFacebook : postToLinkedIn;
       const res = await postFn({ content: finalContent, imageBuffer });
@@ -230,7 +298,9 @@ module.exports = {
   run,
   buildImagePrompt,
   generateImageWithFallback,
+  generateHostedFLUXImage,
   generateHostedImage,
   generateImageFree,
-  generateZeroGPUImage
+  generateZeroGPUImage,
+  normalizeImage
 };
