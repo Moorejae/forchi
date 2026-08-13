@@ -11,7 +11,7 @@ function buildImagePrompt(topic, destination) {
   return `${topic}, ${styleSuffix}`;
 }
 
-// ── Free image generation (Pollinations.ai — no API key, no HF credits) ──────
+// ── Free fallback image generation (Pollinations.ai — no API key, no HF credits) ──
 async function generateImageFree(prompt) {
   const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&nologo=true`;
   console.log(`[Image API] Generating image via Pollinations (free): "${prompt}"...`);
@@ -25,10 +25,10 @@ async function generateImageFree(prompt) {
   return Buffer.from(arrayBuffer);
 }
 
-// ── High-quality image generation (HF ZeroGPU Gradio Space, FLUX.1-dev) ───────
+// ── High-quality image generation (HF ZeroGPU Gradio Space, SDXL base 1.0) ─────
 async function generateZeroGPUImage(prompt) {
   const base = (process.env.ZEROGPU_ENDPOINT || "https://slymun-forchi-img.hf.space").trim().replace(/\/+$/, "");
-  console.log(`[Image API] Generating image via ZeroGPU (FLUX.1-dev): "${prompt}"...`);
+  console.log(`[Image API] Generating image via ZeroGPU (SDXL): "${prompt}"...`);
 
   // 1. Start the gradio job
   const startRes = await fetch(`${base}/gradio_api/call/generate`, {
@@ -60,7 +60,7 @@ async function generateZeroGPUImage(prompt) {
   return Buffer.from(buf);
 }
 
-async function generateFLUXImage(prompt) {
+async function generateImageWithFallback(prompt) {
   // Tier 1: ZeroGPU (high quality, free daily GPU quota)
   try {
     return await generateZeroGPUImage(prompt);
@@ -72,7 +72,7 @@ async function generateFLUXImage(prompt) {
   try {
     return await generateImageFree(prompt);
   } catch (err) {
-    console.warn(`[Image API] Pollinations failed: ${err.message} — trying FLUX...`);
+    console.warn(`[Image API] Pollinations failed: ${err.message} — trying FLUX router...`);
   }
 
   // Tier 3: FLUX via HF router (requires HF Inference credits)
@@ -131,7 +131,7 @@ async function run({ destinations = [], content = "", visualTopic = null }) {
   const tasks = destinations.map(async (dest) => {
     try {
       const imagePrompt = buildImagePrompt(finalVisualTopic, dest);
-      const imageBuffer = await generateFLUXImage(imagePrompt);
+      const imageBuffer = await generateImageWithFallback(imagePrompt);
 
       const postFn = dest === "facebook" ? postToFacebook : postToLinkedIn;
       const res = await postFn({ content: finalContent, imageBuffer });
@@ -171,8 +171,7 @@ async function run({ destinations = [], content = "", visualTopic = null }) {
 module.exports = {
   run,
   buildImagePrompt,
-  generateFLUXImage,
+  generateImageWithFallback,
   generateImageFree,
-  generateZeroGPUImage,
   generateZeroGPUImage
 };
