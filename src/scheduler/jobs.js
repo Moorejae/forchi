@@ -17,12 +17,50 @@ const FB_THEMES = [
 ];
 
 const LI_TOPICS = [
-  "the latest AI news and what it means for how we work",
-  "a practical AI hack most people can use today",
-  "how AI is reshaping tech companies and jobs",
-  "a bold prediction about AI in the next year",
-  "underrated AI tools most people ignore",
-  "what founders get wrong about adopting AI",
+  // AI / LLM
+  "the difference between AI models and true LLM reasoning",
+  "how large language models actually work under the hood",
+  // AI integrations
+  "integrating LLMs into production systems without breaking anything",
+  "practical AI integrations that save engineering teams real time",
+  // Best practices
+  "AI engineering best practices for production systems",
+  "prompt engineering vs system design: what actually moves the needle",
+  "LLM evaluation: how to know if your model is actually good",
+  // Cloud engineering
+  "cloud architecture patterns built specifically for AI workloads",
+  "serverless AI: when it makes sense and when it doesn't",
+  "cloud cost optimization for AI and LLM workloads",
+  // AI news
+  "the latest AI news and what it means for engineers this week",
+  "a major AI release right now and its real-world impact",
+  // Nature + AI
+  "what AI can learn from nature: evolution, swarm intelligence, and neural inspiration",
+  "how biology inspired modern neural networks and what's next",
+  "nature as the original neural network: lessons for AI design",
+  // Dangers of AI in the wrong hands
+  "the real dangers of AI in the wrong hands and how to guard against them",
+  "AI safety, alignment, and why responsible engineering matters now",
+  // Networking
+  "how networking and distributed systems power modern AI",
+  "network architecture for training and serving large models at scale",
+  // Training models
+  "how large language models are trained: the full pipeline explained",
+  "fine-tuning vs RAG: which one do you actually need",
+  "data pipelines for AI: garbage in, garbage out",
+  // Building with AI agents (series)
+  "AI agents series: building your first AI agent — a beginner's roadmap",
+  "AI agents series: orchestrating multi-agent workflows that actually work",
+  "AI agents series: giving agents tools, memory, and boundaries",
+  "AI agents series: when agents fail and how to recover gracefully",
+  "AI agents series: turning a one-off agent into a reusable product",
+  // Cloud + AI engineering
+  "MLOps: taking a model from notebook to production",
+  "scaling AI systems: latency, throughput, and reliability",
+  "vector databases and embeddings, explained simply",
+  "RAG architectures: retrieval strategies that actually improve answers",
+  "AI ethics in engineering: building with responsibility",
+  "career advice for AI and cloud engineers in 2026",
 ];
 
 function pick(arr, seed) {
@@ -47,10 +85,12 @@ function initScheduler() {
       }
       running = true;
       try {
-        // Rotate themes by the current hour so each of the 5 daily runs is different.
+        // Rotate themes by current day + hour so each run differs and changes daily
+        // across the (now much larger) pools — never the same sequence two days in a row.
         const hour = new Date().getUTCHours();
-        const fbTheme = pick(FB_THEMES, Math.floor(hour / 4));
-        const liTopic = pick(LI_TOPICS, Math.floor(hour / 4) + 1);
+        const daySeed = Math.floor(Date.now() / 86400000);
+        const fbTheme = pick(FB_THEMES, daySeed * 13 + Math.floor(hour / 4));
+        const liTopic = pick(LI_TOPICS, daySeed * 29 + Math.floor(hour / 4) + 1);
 
         console.log(`[Auto] ${new Date().toISOString()} — generating posts (FB: "${fbTheme}" | LI: "${liTopic}")`);
 
