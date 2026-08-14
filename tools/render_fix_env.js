@@ -27,6 +27,17 @@ const REQUIRED = [
 ];
 const SRC_ALIAS = { HF_TOKEN: "HF_ACCESS_TOKEN" };
 
+// Non-secret service vars — MUST be re-sent because the bulk PUT replaces the
+// entire list (any var not included is deleted from the service).
+const PLAIN = [
+  ["NODE_ENV", "production"],
+  ["DATABASE_PATH", "./data/forchi.db"],
+  ["AUTO_MODE_DEFAULT", "true"],
+  ["CHAT_PROVIDER", "gemini"],
+  ["LLM_ENDPOINT", process.env.LLM_ENDPOINT || "https://slymun-forchi.hf.space"],
+  ["ZEROGPU_ENDPOINT", process.env.ZEROGPU_ENDPOINT || "https://slymun-forchi-img.hf.space"],
+];
+
 async function api(path, opts = {}) {
   const res = await fetch(API + path, {
     ...opts,
@@ -45,15 +56,16 @@ function mask(v) {
 }
 
 (async () => {
-  // 1. Build the env map from local .env
-  const envVars = {};
+  // 1. Build the full list from local .env (secrets) + non-secret service vars
+  const list = [];
   const missing = [];
   for (const key of REQUIRED) {
     const src = SRC_ALIAS[key] || key;
     const val = (process.env[src] || "").trim();
     if (!val) { missing.push(key); continue; }
-    envVars[key] = val;
+    list.push({ key, value: val });
   }
+  for (const [key, val] of PLAIN) list.push({ key, value: val });
   if (missing.length) {
     console.error(`MISSING from .env: ${missing.join(", ")}`);
     process.exit(1);
@@ -69,11 +81,17 @@ function mask(v) {
   }
   console.log("Found service:", svcId);
 
-  // 3. Upsert env vars (Render API PUT is an upsert)
-  await api(`/services/${svcId}/env-vars`, { method: "PUT", body: JSON.stringify({ envVars }) });
-  console.log(`Set ${Object.keys(envVars).length} env vars:`, Object.keys(envVars).map((k) => `${k}=${mask(envVars[k])}`).join("\n  "));
+  // 3. Replace ALL env vars — Render API expects a BARE array as the JSON body
+  await api(`/services/${svcId}/env-vars`, { method: "PUT", body: JSON.stringify(list) });
+  console.log(`Set ${list.length} env vars:`);
+  for (const e of list) console.log(`  ${e.key}=${mask(e.value)}`);
 
-  // 4. Trigger a deploy
+  // 4. Verify what's actually on the service now
+  const got = await api(`/services/${svcId}/env-vars`);
+  const keys = (Array.isArray(got) ? got : []).map((x) => (x.envVar ? x.envVar.key : x.key));
+  console.log("Verified on Render:", keys.join(", "));
+
+  // 5. Trigger a deploy
   const deploy = await api(`/services/${svcId}/deploys`, { method: "POST", body: JSON.stringify({}) });
   console.log("Deploy triggered:", deploy && (deploy.id || deploy.status || "ok"));
 
