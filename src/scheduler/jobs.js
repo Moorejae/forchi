@@ -14,6 +14,12 @@ const FB_THEMES = [
   "patience, hard work, and protecting what you built",
   "gratitude, faith, and trusting God through hard times",
   "the quiet strength of people who keep going unseen",
+  "a lesson from nature: what the wild teaches about letting go and adapting",
+  "forgiveness and grace: releasing the pain so something holy can grow",
+  "relationships and communication: why unspoken words slowly decay what we love",
+  "loneliness and the quiet seasons: solitude as life clearing away the noise",
+  "purpose and calling: building meaning from what makes you lose track of time",
+  "resilience: standing tall in the middle of the storm, not waiting for it to pass",
 ];
 
 const LI_TOPICS = [
