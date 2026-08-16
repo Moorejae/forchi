@@ -1,6 +1,6 @@
 const { postToFacebook } = require("./facebook");
 const { postToLinkedIn } = require("./linkedin");
-const { generateContentAndVisualTopic, generateFacebookPost, generateLinkedInPost, cleanPostFormatting } = require("../../llm/contentGen");
+const { generateContentAndVisualTopic, generateFacebookPost, generateLinkedInPost, finalizePost } = require("../../llm/contentGen");
 const { detectImageMime } = require("./imageMime");
 const sharp = require("sharp");
 
@@ -223,7 +223,7 @@ async function run({ destinations = [], content = "", visualTopic = null }) {
   console.log(`[Social Workflow] Initiating post for destinations: ${JSON.stringify(destinations)}`);
 
   // 1. Generate text and visual topic if needed
-  let finalContent = cleanPostFormatting(content);
+  let finalContent = (content || "").trim();
   let finalVisualTopic = visualTopic;
 
   if (!finalVisualTopic) {
@@ -241,16 +241,14 @@ async function run({ destinations = [], content = "", visualTopic = null }) {
     finalVisualTopic = gen.visualTopic || content;
   }
 
-  // Safety net: every Facebook post ends with "Fickle youth", no matter the source.
-  if (destinations.includes("facebook")) {
-    const sig = "Fickle youth";
-    if (!finalContent.trim().toLowerCase().endsWith(sig.toLowerCase())) {
-      finalContent = `${finalContent.replace(/\s+$/g, "")}\n\n${sig}`;
-    }
-  }
-
-  // Final sanity check to guarantee no asterisks or hashtags
-  finalContent = cleanPostFormatting(finalContent);
+  // Final formatting for every post: no markdown asterisks or header hashes, keep
+  // real hashtags on the bottom (adding sensible ones when none exist), and for
+  // Facebook guarantee the "Fickle youth" signature right above the hashtags.
+  const fb = destinations.includes("facebook");
+  finalContent = finalizePost(finalContent, {
+    facebook: fb,
+    fallbackTags: fb ? "#FickleYouth #Healing #LettingGo" : "#AI #ArtificialIntelligence #TechNews",
+  });
 
   // 2. Parallel destination execution using Promise.allSettled (Section 4 Latency Budget & Independence)
   const tasks = destinations.map(async (dest) => {
