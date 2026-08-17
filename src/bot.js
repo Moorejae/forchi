@@ -51,12 +51,23 @@ const bot = new Telegraf(token, {
   },
 });
 
+// ── Command handlers — registered BEFORE the catch-all text handler so /start
+//    and /jobs actually fire instead of falling through to generic chat ──
+bot.start((ctx) => {
+  jobsNotify.setChatId(ctx.chat && ctx.chat.id);
+  return ctx.reply(
+    "Hey Victor — I'm ForChi, your personal workflow agent.\n\n" +
+    "I post to Facebook & LinkedIn (5x/day), answer voice notes, search the web, and run ForChi Jobs — discovering and applying to matching remote roles for you.\n\n" +
+    "Try: /jobs · \"show me the jobs report\" · \"turn on the job workflow\" · or just talk to me."
+  );
+});
+registerJobsCommands(bot);
+
 // ── Database + Scheduler ──────────────────────────────────────────────────────
 db.getDB()
   .then(() => {
     initScheduler();
     jobsScheduler.startJobsScheduler({ bot });
-    registerJobsCommands(bot);
   })
   .catch((err) => console.error("[DB Error]", err.message));
 
@@ -68,7 +79,7 @@ async function handleChat(ctx, text) {
   ctx.sendChatAction("typing").catch(() => {});
   const typing = setInterval(() => ctx.sendChatAction("typing").catch(() => {}), 4000);
 
-  chatReply(text)
+  chatReply(text, ctx.chat && ctx.chat.id)
     .then(async (reply) => {
       await ctx.reply(reply);
     })
@@ -196,10 +207,7 @@ bot.on("voice", async (ctx) => {
   }
 });
 
-bot.start((ctx) => {
-  jobsNotify.setChatId(ctx.chat && ctx.chat.id);
-  return ctx.reply("ForChi active and listening. Jobs agent: send /jobs for status.");
-});
+// (the /start command is registered near the top, before the text handler)
 
 // ── HTTP Health Check Server ──────────────────────────────────────────────────
 const PORT = process.env.PORT || 7860;
