@@ -35,6 +35,9 @@ tools/create_img_space.py
 # The jobs agent needs the base resume bundled for the deploy, so un-ignore it:
 !data/resume/
 !data/resume/*.pdf
+# Carlito fonts bundled for the tailored-resume PDF (must ship with the deploy):
+!data/fonts/
+!data/fonts/*.ttf
 # Jobs runtime DB — local data, not source:
 data/jobs.db
 # Jobs runtime state (chat target, on/off) — ephemeral, not source:
