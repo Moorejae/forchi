@@ -32,6 +32,7 @@ REQUIREMENTS:
 
 HARD RULES:
 - Keep EVERY fact real. Never invent employers, titles, years, numbers, projects, or URLs. Only the profile + portfolio facts below may be used.
+- LANGUAGE: If the job description is not in English, write the tailored resume in that same language (translate the real facts faithfully).
 - Plain text only: no markdown symbols, no hashtags, no tables, no bullets with asterisks or dashes. Use clean lines.
 - ONE PAGE: keep it tight — summary max 2 sentences, skills 3-4 compact lines, each project max 2 short bullets, each experience entry max 2 short lines, certifications 1 line each. Shorten until it fits one US Letter page.
 

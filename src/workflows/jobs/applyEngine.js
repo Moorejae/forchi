@@ -149,6 +149,7 @@ function standardAnswers() {
     portfolio: strip(L.myzelva || L.cloudvoid),
     years: PROFILE.yearsExperience,
     workAuth: PROFILE.workAuthorization,
+    clearance: PROFILE.securityClearance,
     salary: PROFILE.salaryExpectation || "",
   };
 }
@@ -167,6 +168,7 @@ function fuzzyMatch(value) {
   if (/portfolio|website|personal (site|url)|profile url/.test(s)) return "portfolio";
   if (/year(s)? of (professional )?experience|how many years|years experience/.test(s)) return "years";
   if (/authoriz|eligible to work|right to work|work permit|sponsorship|visa/.test(s)) return "workAuth";
+  if (/security clearance|clearance|background check|security check/.test(s)) return "clearance";
   if (/salary|compensation|pay expectation|expected (pay|salary)/.test(s)) return "salary";
   if (/how did you hear|referral|found (this|us)|source of/.test(s)) return "source";
   return null;
@@ -228,6 +230,7 @@ async function buildFormData(job, app, ensure = {}) {
         if (tag === "source") put(f.key, "Found via an AI job-search agent");
         else if (tag === "years") put(f.key, std.years);
         else if (tag === "workAuth") put(f.key, std.workAuth);
+        else if (tag === "clearance") put(f.key, std.clearance);
         else if (tag === "salary") { if (std.salary) put(f.key, std.salary); }
         else if (tag === "linkedin") put(f.key, std.linkedin);
         else if (tag === "github") put(f.key, std.github);

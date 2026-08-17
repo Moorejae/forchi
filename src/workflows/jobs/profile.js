@@ -54,7 +54,11 @@ const PROFILE = {
   portfolioLinks: ["https://myzelva.com", "https://cloudvoid.online"],
   // ATS application-form answers (standard fields). Tweak as needed.
   yearsExperience: 3, // earliest real project (2024) → ~3 years
-  workAuthorization: "Authorized to work remotely worldwide; based in Lagos, Nigeria (WAT)",
+  languages: ["English (professional / fluent)", "Igbo (native)"],
+  // Preferred job-hunting regions (user rule).
+  preferredRegions: ["Poland", "Europe", "Australia", "New Zealand", "North America", "South America", "Israel"],
+  workAuthorization: "Not authorized to work in-country; available for remote work worldwide",
+  securityClearance: "None (no security clearance)",
   // Salary the AI fills into forms — user rule: any amount BELOW $5,000/month.
   salaryExpectation: "$3,500 per month",
   certifications: [

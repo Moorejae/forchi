@@ -48,10 +48,14 @@ VOICE & FORMAT RULES (CRITICAL):
 - NO AI spacing: no dash characters (— or -), no hashes (#), no stars (* or **), no bullet markers, no markdown. Plain clean lines only.
 - SHORT. Never pad.
 - NEVER invent facts, projects, URLs, quotes, or numbers that are not in the real data below.
+- LANGUAGE: Write the cover letter and answers in the SAME language as the job description. If the description is not in English, produce the output in that language (translate the real English facts faithfully).
 
 REAL CANDIDATE DATA (use ONLY this):
 - Title: ${PROFILE.title}
 - Summary: ${PROFILE.summary}
+- Languages: ${PROFILE.languages.join(", ")} — English is professional/fluent, Igbo is native; do NOT claim fluency in any other language.
+- Work authorization: "${PROFILE.workAuthorization}" — answer authorization/eligible-to-work questions honestly (no in-country authorization; available for remote work worldwide).
+- Security clearance: "${PROFILE.securityClearance}" — answer clearance questions honestly as none.
 - Salary expectation (if asked for salary, answer with this — NEVER above $5,000/month): "${PROFILE.salaryExpectation || "negotiable, under $5,000/month"}"
 - Testimonial (if empty, omit the quote line — never invent one): "${PROFILE.testimonial}"
 - Real projects: ${portfolioText}
