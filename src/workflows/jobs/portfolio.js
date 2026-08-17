@@ -68,7 +68,7 @@ const PORTFOLIO = [
     years: "2026 – present",
     url: "https://myzelva.com",
     facts: [
-      "A prompt-engineering frontend website: a user describes what they want, and the AI asks clarifying questions, then tailors the perfect prompt for them.",
+      "Myzelva is a live prompt-engineering website that helps users create high-end, production-grade prompts for whatever they want to build or create: they describe their goal, the AI asks clarifying questions, then tailors the perfect prompt for them.",
     ],
   },
 ];

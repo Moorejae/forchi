@@ -42,7 +42,7 @@ const PROFILE = {
     phone: "+234 816 280 2162",
     location: "Lagos, Nigeria (WAT, GMT+1)",
   },
-  // Public proof links the agent can share (all real).
+  // Public proof links (used in the RESUME header, like the original).
   links: {
     github: "https://github.com/Moorejae",
     linkedin: "https://linkedin.com/in/aguchiedoxie",
@@ -50,6 +50,8 @@ const PROFILE = {
     cloudvoid: "https://cloudvoid.online",
     myzelva: "https://myzelva.com",
   },
+  // Portfolio sites shown on the COVER LETTER signature — NO socials.
+  portfolioLinks: ["https://myzelva.com", "https://cloudvoid.online"],
   certifications: [
     "Cloud Computing Certification, Digital Witch (2026)",
     "Certified Customer Service Professional, CURSA (2025)",

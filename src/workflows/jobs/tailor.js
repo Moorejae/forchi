@@ -12,6 +12,10 @@ async function tailorResume(job) {
       summary: PROFILE.summary,
       skills: PROFILE.skills,
       certifications: PROFILE.certifications,
+      email: PROFILE.email,
+      phone: PROFILE.phone,
+      linkedin: PROFILE.linkedin,
+      github: PROFILE.github,
     },
     portfolio: PORTFOLIO.map((p) => ({ project: p.project, role: p.role, years: p.years, url: p.url, facts: p.facts })),
   }, null, 1);
@@ -19,6 +23,7 @@ async function tailorResume(job) {
   const prompt = `Rewrite this candidate's resume so it fits THIS specific job posting. The employer wants someone who understands the ROLE — the job description explains exactly what that means — so every section must be tailored to it.
 
 REQUIREMENTS:
+0. HEADER — ALWAYS start with the header exactly like the candidate's original resume: NAME on one line, TITLE on the next line, then the contact line in this format: WAT (GMT+1) | email | phone | linkedin | github
 1. PROFESSIONAL SUMMARY — make it PRECISE and DIRECT, in the candidate's own style (short, confident, few sentences), but adapted to THIS job and company. Lead with the specific value this role needs. Do NOT use vague filler.
 2. SKILLS — list ONLY the skills relevant to THIS job. Drop anything irrelevant. Order by relevance to the JD's keywords.
 3. PROJECTS — keep only the 1-3 most relevant projects, and rephrase their bullets to mirror THIS job's language and technology. (Prefer projects with live URLs: CloudVoid at https://cloudvoid.online and Myzelva at https://myzelva.com — include their URLs.)

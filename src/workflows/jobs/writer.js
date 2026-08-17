@@ -9,7 +9,7 @@ async function writeApplication({ job, companyResearch }) {
     PORTFOLIO.map((p) => ({ project: p.project, role: p.role, years: p.years, url: p.url, facts: p.facts })),
     null, 1
   );
-  const links = Object.values(PROFILE.links).join(" | ");
+  const links = (PROFILE.portfolioLinks || []).join(" | ");
 
   const prompt = `You are writing a JOB APPLICATION cover letter for ${PROFILE.name} ("Victor"), IN HIS VOICE, following HIS exact template.
 
@@ -50,7 +50,7 @@ Victor Agu
 P.S. [a light, professional human touch — MUST be different for every job, tied to THIS job's description and company]
 
 RULES:
-- Use 1-2 projects max, the most relevant to the job. CloudVoid (https://cloudvoid.online) and Myzelva (https://myzelva.com) have live URLs — prefer them. ForChi and Flamchi are live 24/7 production Telegram bots with no web URL — say "live in production on Telegram" instead of a URL.
+- Use 1-2 projects max, the most relevant to the job. Myzelva (https://myzelva.com) is the candidate's live prompt-engineering portfolio site — always include it (as one of the projects or it stays in the portfolio links in the signature). CloudVoid (https://cloudvoid.online) also has a live URL — prefer these two. ForChi and Flamchi are live 24/7 production Telegram bots with no web URL — say "live in production on Telegram" instead of a URL.
 - If the hiring manager's name is unknown, use "Hello," — never invent a name.
 - The reason line and the P.S. MUST reference this specific job and company (prove you read the JD and know them).
 - Replace every [bracket] with real content. Keep the whole letter SHORT.
