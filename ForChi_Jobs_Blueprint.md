@@ -1,7 +1,9 @@
 # ForChi Jobs — Autonomous Job Discovery & Application Agent (Blueprint)
 
-> **Status:** Design locked (v2, 2026-08-16) — NOT built yet.
-> **Goal:** A workflow *inside ForChi* that runs on **constant auto** (no manual trigger): continuously discovers jobs matching the user's real profile, scores them, and **auto-applies** to trusted ATS portals with **human-sounding** cover letters and screening answers — so the user wakes up to a Telegram digest of applications instead of doing it all manually.
+> **Status:** ✅ **BUILT & LIVE** (v3, 2026-08-18) — running on **constant auto** on Render.
+> **ForChi now runs TWO active workflows (both autonomous):**
+> 1. **Social workflow** — Fickle youth Facebook posts + LinkedIn deep-dives, 5×/day, plus the daily 8pm WAT report.
+> 2. **Jobs workflow (this doc)** — discovers jobs matching the user's real profile, scores them, and **auto-applies** to trusted ATS portals with **human-sounding** cover letters and screening answers — so the user gets a Telegram digest of applications every day at **20:00 WAT** instead of doing it all manually.
 > **Non-goals (v1):** LinkedIn Easy Apply automation, Upwork/Freelancer auto-bidding, fabricated credentials.
 
 ---
@@ -22,9 +24,10 @@
         ┌─────────────────────────────────────────────────────────┐
         │  ForChi bot (Node.js + Telegraf) — Render free tier      │
         │                                                         │
-        │  Social workflow  (unchanged)     Jobs workflow (NEW)    │
+        │  Social workflow  (ACTIVE)        Jobs workflow (ACTIVE) │
         │  - autoMode scheduler             - jobs scheduler       │
-        │  - FB / LI posts                  - Telegram /jobs cmds  │
+        │  - FB / LI posts (5x/day)         - Telegram /jobs cmds  │
+        │  - daily report 20:00 WAT         - daily report 20:00 WAT│
         └─────────────────────────────────────────────────────────┘
                           │  reuse
         ┌─────────────────▼──────────────────────────────┐
@@ -34,7 +37,7 @@
         └─────────────────────────────────────────────────┘
 ```
 
-**New module tree (when we build):**
+**Module tree (built & live, `src/workflows/jobs/`):**
 ```
 src/workflows/jobs/
   profile.js          # user profile: resume data, target roles, voice rules
@@ -100,13 +103,14 @@ src/workflows/jobs/
 - Non-trusted sources (LinkedIn discovery, company pages, anything sketchy) → **semi-auto**: agent prepares everything, user taps approve in Telegram.
 
 ### Stage 5 — NOTIFY
-- Morning digest to Telegram: applied to N jobs (with scores), M pending match, K archived, any responses/rejections.
-- Controls: `/jobs stop` + `/jobs start` (safety kill-switch only — no manual apply trigger), `/jobs queue`, `/jobs applied`, `/jobs digest`, `/jobs stats`.
+- **Daily report at 20:00 WAT (19:00 UTC) every day** to the registered Telegram chat: applied in last 24h, total applied, queued, skipped, total jobs seen, apply mode/cap, freshness window (≤14d), and a source breakdown. Also sent shortly after boot if a chat is already known.
+- A chat auto-registers for the report the first time it uses `/start` or `/jobs`.
+- Controls: `/jobs status`, `/jobs queue` (with apply URLs + manual-apply markers), `/jobs applied`, `/jobs notify`, and the safety kill-switch `/jobs stop` + `/jobs start` (no manual apply trigger).
 
 ---
 
 ## 4. Scheduler & trigger — CONSTANT AUTO (separate from social)
-- **Always-on, no manual trigger.** Continuous scan+apply loop catches new postings as they appear, plus a morning digest. Uses the existing keep-alive so Render never sleeps.
+- **Always-on, no manual trigger.** Continuous scan+apply loop (every 30 min) catches new postings as they appear, plus a daily report at **20:00 WAT**. Uses the existing keep-alive so Render never sleeps.
 - Independent persisted state (`data/jobs_mode.json`); the only controls are an emergency `/jobs stop` / `/jobs start` safety kill-switch — NOT a manual apply trigger.
 - **Never posts to the same job twice** (see Stage 4 hard rule).
 
@@ -164,17 +168,17 @@ The scan went from 2 boards + 25 companies to **9 source channels** (~2,500 jobs
 
 ---
 
-## 7. Build milestones (order)
-1. **Profile + portfolio ingestion** — ingest the resume (`Agu_Victor_Chiedozie_Resum.pdf`) + the ForChi & Flamchi/Odonata blueprints into the grounding corpus; extract the natural conversational voice.
-2. **Discovery** — Greenhouse/Lever/Workable/Ashby + remote boards + dedupe DB; continuous scan loop.
-3. **Matcher** — Gemini scoring + apply/no-apply decision.
-4. **Researcher + Writer** — company research, human-voice cover letters + screening answers, grounded in the portfolio corpus.
-5. **Tailor + Apply engine** — per-job resume tailoring, trusted-ATS submission, never-twice enforcement, caps/pacing, applications log.
-6. **Constant-auto loop + digests + safety controls** — morning report, `/jobs` commands.
+## 8. Build status (ALL DONE — live)
+- [x] **Profile + portfolio ingestion** — resume + ForChi & Flamchi/Odonata grounding corpus; natural conversational voice.
+- [x] **Discovery** — 9 source channels (Greenhouse/Lever boards, RemoteOK, WeWorkRemotely, Remotive, Jobicy, Arbeitnow, Himalayas, LinkedIn guest API) + dedupe DB; continuous 30-min scan loop.
+- [x] **Matcher** — Gemini scoring + apply/no-apply decision (+ freshness gate, location rule).
+- [x] **Researcher + Writer** — company research, human-voice cover letters + screening answers, language-aware (Polish/German/etc. post-translation).
+- [x] **Tailor + Apply engine** — per-job resume tailoring to styled PDF (Carlito), trusted-ATS submission, never-twice enforcement, caps/pacing, applications log.
+- [x] **Constant-auto loop + daily report + safety controls** — 20:00 WAT report, `/jobs` commands.
 
 ---
 
-## 8. Decisions locked (2026-08-16)
+## 9. Decisions locked (2026-08-16)
 - [x] Base profile = `Agu_Victor_Chiedozie_Resum.pdf` (Cloud & AI Systems Engineer). Identity: aguchiedoxie@gmail.com / +234 816 280 2162 / linkedin.com/in/aguchiedoxie / github.com/Moorejae.
 - [x] Grounding corpus = ForChi + Flamchi (V61 Odonata) + CLAY + CloudVoid + Footchristo blueprints and real numbers.
 - [x] Target roles: AI/LLM Engineer, **AI Integration Engineer, AI Automation Engineer, AI Solutions Engineer** (as a Cloud & AI Systems Engineer he also fits AI-integration/automation roles — wiring LLMs into products, agent pipelines, trigger-based automation, exactly what ForChi is), Cloud/DevOps Engineer, Automation Engineer, Backend Developer (Node.js/Python). Freelance contracts out of scope.
@@ -182,4 +186,4 @@ The scan went from 2 boards + 25 companies to **9 source channels** (~2,500 jobs
 - [x] LinkedIn: discovery only. Freelance platforms: out of scope for v1.
 - [x] Voice: natural conversational (non-poetic), modeled on the resume summary + how the user talks.
 - [x] Cover letters must prove: JD read + company known + why they need someone like him.
-- [ ] At build time: confirm first ATS (suggest Greenhouse + Lever), target-company shortlist, daily cap + window (8–10/day, 08:00–20:00 WAT).
+- [x] First ATS confirmed: Greenhouse + Lever (+ Workable/Ashby via ATS-resolved feeds). Daily cap **10/day**, apply window **07:00–19:00 UTC** (08:00–20:00 WAT), scan every 30 min, freshness ≤ **14 days**.
