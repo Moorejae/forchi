@@ -36,8 +36,8 @@ const PLAIN = [
   ["CHAT_PROVIDER", "gemini"],
   ["LLM_ENDPOINT", process.env.LLM_ENDPOINT || "https://slymun-forchi.hf.space"],
   ["ZEROGPU_ENDPOINT", process.env.ZEROGPU_ENDPOINT || "https://slymun-forchi-img.hf.space"],
-  // Jobs workflow: OFF by default until tests pass; never auto-apply by default.
-  ["JOBS_MODE_DEFAULT", "false"],
+  // Jobs workflow: ON now that tests passed; NEVER auto-apply by default (dry-run).
+  ["JOBS_MODE_DEFAULT", "true"],
   ["JOBS_AUTO_APPLY", "false"],
 ];
 
