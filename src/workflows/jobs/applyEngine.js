@@ -128,13 +128,130 @@ function fdAppendFile(fd, name, buf, filename) {
   fd.append(name, new Blob([buf], { type: "application/pdf" }), filename);
 }
 
+// ── ATS form auto-fill ───────────────────────────────────────────────────────
+// Fills the company's application-form fields (years of experience, LinkedIn,
+// GitHub, portfolio, work authorization, salary, custom screening questions)
+// by fetching the job's schema and mapping real profile/answer data onto it.
+
+function standardAnswers() {
+  const idn = PROFILE.identity;
+  const L = PROFILE.links || {};
+  const strip = (u) => String(u || "").replace(/^https?:\/\//, "").replace(/\/$/, "");
+  return {
+    email: idn.email,
+    phone: idn.phone,
+    firstName: idn.firstName,
+    lastName: idn.lastName,
+    fullName: idn.fullName,
+    location: idn.location,
+    linkedin: strip(L.linkedin),
+    github: strip(L.github),
+    portfolio: strip(L.myzelva || L.cloudvoid),
+    years: PROFILE.yearsExperience,
+    workAuth: PROFILE.workAuthorization,
+    salary: PROFILE.salaryExpectation || "",
+  };
+}
+
+function fuzzyMatch(value) {
+  const s = String(value || "").toLowerCase();
+  if (!s) return null;
+  if (/email/.test(s)) return "email";
+  if (/first ?name/.test(s)) return "firstName";
+  if (/last ?name/.test(s)) return "lastName";
+  if (/\bfull ?name\b|^\s*name\s*$/.test(s)) return "fullName";
+  if (/phone|mobile|contact number/.test(s)) return "phone";
+  if (/location|city|based in|country|where are you/.test(s)) return "location";
+  if (/linkedin/.test(s)) return "linkedin";
+  if (/github/.test(s)) return "github";
+  if (/portfolio|website|personal (site|url)|profile url/.test(s)) return "portfolio";
+  if (/year(s)? of (professional )?experience|how many years|years experience/.test(s)) return "years";
+  if (/authoriz|eligible to work|right to work|work permit|sponsorship|visa/.test(s)) return "workAuth";
+  if (/salary|compensation|pay expectation|expected (pay|salary)/.test(s)) return "salary";
+  if (/how did you hear|referral|found (this|us)|source of/.test(s)) return "source";
+  return null;
+}
+
+function matchPreparedAnswer(questionText, app) {
+  const q = String(questionText || "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").trim();
+  if (!q || !app.answers || !app.answers.length) return null;
+  for (const a of app.answers) {
+    const aq = String(a.question || "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").trim();
+    if (aq && (q.includes(aq) || aq.includes(q) || q.split(/\s+/).filter((w) => w.length > 3).some((w) => aq.includes(w)))) {
+      return a.answer;
+    }
+  }
+  return null;
+}
+
+async function fetchFormSchema(job) {
+  try {
+    if (job.source === "greenhouse") {
+      const res = await fetch(`https://boards-api.greenhouse.io/v1/boards/${job.board || job.company.toLowerCase()}/jobs/${job.ref_id}`, { signal: AbortSignal.timeout(15000) });
+      if (res.ok) {
+        const d = await res.json();
+        return (d.questions || []).map((q) => ({ key: String(q.name || q.id || q.label || ""), label: q.label || q.name || q.title || "", required: !!q.required }));
+      }
+    } else if (job.source === "lever") {
+      const res = await fetch(`https://api.lever.co/v0/postings/${job.board || job.company.toLowerCase()}/${job.ref_id}?mode=json`, { signal: AbortSignal.timeout(15000) });
+      if (res.ok) {
+        const d = await res.json();
+        const all = [...(d.additionalQuestions || []), ...(d.customQuestions || [])];
+        return all.map((q) => ({ key: q.id || "", label: q.text || "", required: !!q.required }));
+      }
+    }
+  } catch (e) {
+    console.warn(`[Jobs] form schema fetch failed (${job.source}): ${e.message}`);
+  }
+  return null;
+}
+
+async function buildFormData(job, app, ensure = {}) {
+  const std = standardAnswers();
+  const schema = await fetchFormSchema(job);
+  const out = new Map();
+  const put = (k, v) => { if (k && v !== undefined && v !== null && String(v) !== "") out.set(String(k), String(v)); };
+
+  // Core identity fields (always sent; names vary by ATS).
+  if (ensure.email) put(ensure.email, std.email);
+  if (ensure.firstName) put(ensure.firstName, std.firstName);
+  if (ensure.lastName) put(ensure.lastName, std.lastName);
+  if (ensure.fullName) put(ensure.fullName, std.fullName);
+  if (ensure.phone) put(ensure.phone, std.phone);
+  if (ensure.location) put(ensure.location, std.location);
+
+  if (schema && schema.length) {
+    for (const f of schema) {
+      if (out.has(f.key)) continue;
+      const tag = fuzzyMatch(`${f.label} ${f.key}`);
+      if (tag) {
+        if (tag === "source") put(f.key, "Found via an AI job-search agent");
+        else if (tag === "years") put(f.key, std.years);
+        else if (tag === "workAuth") put(f.key, std.workAuth);
+        else if (tag === "salary") { if (std.salary) put(f.key, std.salary); }
+        else if (tag === "linkedin") put(f.key, std.linkedin);
+        else if (tag === "github") put(f.key, std.github);
+        else if (tag === "portfolio") put(f.key, std.portfolio);
+        else if (tag === "location") put(f.key, std.location);
+        else if (tag !== "email" && tag !== "phone" && tag !== "firstName" && tag !== "lastName" && tag !== "fullName") put(f.key, std[tag]);
+      } else {
+        const ans = matchPreparedAnswer(f.label, app);
+        if (ans) put(f.key, ans);
+      }
+    }
+  } else {
+    // No schema available — send only the core identity fields (already added
+    // via `ensure`). The resume PDF carries LinkedIn/GitHub/years, so we never
+    // guess ATS field names that could 400 a strict form.
+  }
+  return out;
+}
+
 // ── Greenhouse ───────────────────────────────────────────────────────────────
 async function submitGreenhouse(job, app, resumeBuf) {
   const fd = new FormData();
-  fd.append("first_name", PROFILE.identity.firstName);
-  fd.append("last_name", PROFILE.identity.lastName);
-  fd.append("email", PROFILE.identity.email);
-  fd.append("phone", PROFILE.identity.phone || "");
+  const fields = await buildFormData(job, app, { email: "email", firstName: "first_name", lastName: "last_name", phone: "phone" });
+  for (const [k, v] of fields) fd.append(k, v);
   if (app.coverLetter) fd.append("cover_letter", app.coverLetter);
   fdAppendFile(fd, "resume", resumeBuf, "Victor_Agu_Resume.pdf");
   const url = `https://boards-api.greenhouse.io/v1/boards/${job.board || job.company.toLowerCase()}/jobs/${job.ref_id}/application`;
@@ -146,10 +263,8 @@ async function submitGreenhouse(job, app, resumeBuf) {
 // ── Lever ────────────────────────────────────────────────────────────────────
 async function submitLever(job, app, resumeBuf) {
   const fd = new FormData();
-  fd.append("name", PROFILE.identity.fullName);
-  fd.append("email", PROFILE.identity.email);
-  fd.append("phone", PROFILE.identity.phone || "");
-  fd.append("org", PROFILE.identity.location || "");
+  const fields = await buildFormData(job, app, { fullName: "name", email: "email", phone: "phone", location: "org" });
+  for (const [k, v] of fields) fd.append(k, v);
   fdAppendFile(fd, "resume", resumeBuf, "Victor_Agu_Resume.pdf");
   if (app.coverLetter) fd.append("comments", app.coverLetter);
   const url = `https://jobs.lever.co/${job.board || job.company.toLowerCase()}/${job.ref_id}/apply`;
@@ -161,9 +276,8 @@ async function submitLever(job, app, resumeBuf) {
 // ── Workable ─────────────────────────────────────────────────────────────────
 async function submitWorkable(job, app, resumeBuf) {
   const fd = new FormData();
-  fd.append("name", PROFILE.identity.fullName);
-  fd.append("email", PROFILE.identity.email);
-  fd.append("phone", PROFILE.identity.phone || "");
+  const fields = await buildFormData(job, app, { fullName: "name", email: "email", phone: "phone" });
+  for (const [k, v] of fields) fd.append(k, v);
   if (app.coverLetter) fd.append("cover_letter", app.coverLetter);
   fdAppendFile(fd, "resume", resumeBuf, "Victor_Agu_Resume.pdf");
   const url = `https://apply.workable.com/api/v3/accounts/${job.board || job.company.toLowerCase()}/jobs/${job.ref_id}/apply`;
@@ -175,9 +289,8 @@ async function submitWorkable(job, app, resumeBuf) {
 // ── Ashby ────────────────────────────────────────────────────────────────────
 async function submitAshby(job, app, resumeBuf) {
   const fd = new FormData();
-  fd.append("name", PROFILE.identity.fullName);
-  fd.append("email", PROFILE.identity.email);
-  fd.append("phone", PROFILE.identity.phone || "");
+  const fields = await buildFormData(job, app, { fullName: "name", email: "email", phone: "phone" });
+  for (const [k, v] of fields) fd.append(k, v);
   if (app.coverLetter) fd.append("comments", app.coverLetter);
   fdAppendFile(fd, "resume", resumeBuf, "Victor_Agu_Resume.pdf");
   const url = `https://jobs.ashbyhq.com/${job.board || job.company.toLowerCase()}/${job.ref_id}/application`;
@@ -226,4 +339,4 @@ async function submitApplication(job, app) {
   }
 }
 
-module.exports = { submitApplication, getResumeBuffer, AUTO_APPLY, DAILY_CAP, inApplyWindow };
+module.exports = { submitApplication, getResumeBuffer, buildFormData, fetchFormSchema, AUTO_APPLY, DAILY_CAP, inApplyWindow };

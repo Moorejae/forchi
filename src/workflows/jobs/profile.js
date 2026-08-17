@@ -52,6 +52,10 @@ const PROFILE = {
   },
   // Portfolio sites shown on the COVER LETTER signature — NO socials.
   portfolioLinks: ["https://myzelva.com", "https://cloudvoid.online"],
+  // ATS application-form answers (standard fields). Tweak as needed.
+  yearsExperience: 3, // earliest real project (2024) → ~3 years
+  workAuthorization: "Authorized to work remotely worldwide; based in Lagos, Nigeria (WAT)",
+  salaryExpectation: "", // optional — set to pre-fill salary fields (e.g. "negotiable")
   certifications: [
     "Cloud Computing Certification, Digital Witch (2026)",
     "Certified Customer Service Professional, CURSA (2025)",
