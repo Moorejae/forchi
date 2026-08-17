@@ -6,16 +6,29 @@ const { PORTFOLIO } = require("./portfolio");
 
 async function tailorResume(job) {
   const realData = JSON.stringify({
-    profile: PROFILE,
-    portfolio: PORTFOLIO.map((p) => ({ project: p.project, role: p.role, years: p.years, facts: p.facts })),
+    profile: {
+      name: PROFILE.name,
+      title: PROFILE.title,
+      summary: PROFILE.summary,
+      skills: PROFILE.skills,
+      certifications: PROFILE.certifications,
+    },
+    portfolio: PORTFOLIO.map((p) => ({ project: p.project, role: p.role, years: p.years, url: p.url, facts: p.facts })),
   }, null, 1);
 
-  const prompt = `Rewrite this candidate's resume so it fits THIS specific job posting. ATS-tailoring: lead with the JD's exact keywords and required skills, rephrase bullets to mirror the JD's language, drop irrelevant projects, tighten everything to one page.
+  const prompt = `Rewrite this candidate's resume so it fits THIS specific job posting. The employer wants someone who understands the ROLE — the job description explains exactly what that means — so every section must be tailored to it.
+
+REQUIREMENTS:
+1. PROFESSIONAL SUMMARY — make it PRECISE and DIRECT, in the candidate's own style (short, confident, few sentences), but adapted to THIS job and company. Lead with the specific value this role needs. Do NOT use vague filler.
+2. SKILLS — list ONLY the skills relevant to THIS job. Drop anything irrelevant. Order by relevance to the JD's keywords.
+3. PROJECTS — keep only the 1-3 most relevant projects, and rephrase their bullets to mirror THIS job's language and technology. (Prefer projects with live URLs: CloudVoid at https://cloudvoid.online and Myzelva at https://myzelva.com — include their URLs.)
+4. EXPERIENCE — tailor it to reflect what the candidate actually DID, and ALSO how he can apply the same level of expertise to THIS company. Frame each bullet so the employer can picture him doing the same for them.
+5. CERTIFICATIONS — ALWAYS include this section at the bottom, using the candidate's real certifications listed below. Never omit it.
 
 HARD RULES:
-- Keep EVERY fact real. Never invent employers, titles, years, numbers, or projects. Only the profile + portfolio facts below may be used.
-- No markdown symbols, no hashtags, no tables.
-- Sections: SUMMARY / SKILLS / PROJECTS / EXPERIENCE / CERTIFICATIONS (omit sections with no real content).
+- Keep EVERY fact real. Never invent employers, titles, years, numbers, projects, or URLs. Only the profile + portfolio facts below may be used.
+- Plain text only: no markdown symbols, no hashtags, no tables, no bullets with asterisks or dashes. Use clean lines.
+- One page, concise.
 
 REAL CANDIDATE DATA:
 ${realData}
@@ -26,7 +39,7 @@ JOB:
 - Description: ${(job.description || "").slice(0, 5000)}
 
 Return JSON ONLY:
-{"resumeText": "the full tailored resume as clean plain text"}`;
+{"resumeText": "the full tailored resume as clean plain text, ending with the CERTIFICATIONS section"}`;
 
   try {
     const raw = await generate(prompt, { type: "object", maxTokens: 1500 });

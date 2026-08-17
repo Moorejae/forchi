@@ -42,6 +42,22 @@ const PROFILE = {
     phone: "+234 816 280 2162",
     location: "Lagos, Nigeria (WAT, GMT+1)",
   },
+  // Public proof links the agent can share (all real).
+  links: {
+    github: "https://github.com/Moorejae",
+    linkedin: "https://linkedin.com/in/aguchiedoxie",
+    facebook: "https://www.facebook.com/realfickleyouth", // "Fickle youth" page
+    cloudvoid: "https://cloudvoid.online",
+    myzelva: "https://myzelva.com",
+  },
+  certifications: [
+    "Cloud Computing Certification, Digital Witch (2026)",
+    "Certified Customer Service Professional, CURSA (2025)",
+    "IT Support Specialist, Digital Witch (2024)",
+  ],
+  // Real short testimonial from a past collaborator/client (optional). Cover
+  // letters only include a quote when this has a value — never fabricated.
+  testimonial: "",
 };
 
 module.exports = { PROFILE };

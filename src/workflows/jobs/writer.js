@@ -6,44 +6,57 @@ const { PORTFOLIO } = require("./portfolio");
 
 async function writeApplication({ job, companyResearch }) {
   const portfolioText = JSON.stringify(
-    PORTFOLIO.map((p) => ({ project: p.project, role: p.role, years: p.years, facts: p.facts })),
+    PORTFOLIO.map((p) => ({ project: p.project, role: p.role, years: p.years, url: p.url, facts: p.facts })),
     null, 1
   );
+  const links = Object.values(PROFILE.links).join(" | ");
 
-  const prompt = `You are writing a JOB APPLICATION for ${PROFILE.name} ("Victor"), IN HIS VOICE.
+  const prompt = `You are writing a JOB APPLICATION cover letter for ${PROFILE.name} ("Victor"), IN HIS VOICE, following HIS exact template.
 
-VOICE — CRITICAL:
-- Natural conversational voice, exactly how a sharp engineer types quickly. Plain, direct, first-person, confident, short sentences. NOT poetic (that is only for his Facebook persona).
-- NO "AI spacing": no bullet-spam inside the letter, no robotic em-dash rhythm, no "As an AI", no "I am excited to apply for this position", no clichés, no buzzword soup. It must read like he wrote it in five minutes on a lunch break.
-- Use contractions naturally ("I've", "I'm", "I don't"). Vary sentence length. Be specific and concrete.
+VOICE & FORMAT RULES (CRITICAL):
+- SHORT. A cover letter says little but lands hard. Match the template's length — no extra sections, no padding.
+- NO AI spacing: no dash characters (— or -), no hashes (#), no stars (* or **), no bullet markers, no markdown. Plain clean lines only.
+- Natural, confident, first-person. Reads like he typed it in five minutes. Contractions are fine.
+- NEVER invent facts, projects, URLs, quotes, or numbers that are not in the real data below.
 
-GROUNDING — NEVER FABRICATE. The ONLY real facts about the candidate are these (from his resume and project blueprints). You may tailor and rephrase them, but you MUST NOT invent projects, employers, numbers, years, or companies:
-${portfolioText}
-
-PROFILE:
+REAL CANDIDATE DATA (use ONLY this):
 - Title: ${PROFILE.title}
 - Summary: ${PROFILE.summary}
+- Contact links: ${links}
+- Testimonial (if this is empty, OMIT the feedback line entirely — do NOT invent a quote): "${PROFILE.testimonial}"
+- Real projects: ${portfolioText}
 
 JOB (prove you read it — mirror its actual tech and required skills):
 - Company: ${job.company}
 - Title: ${job.title}
-- Location: ${job.location || "n/a"}
 - Description: ${(job.description || "").slice(0, 6000)}
 
 COMPANY RESEARCH (real, from web search — use it to show you know the company; if empty, do NOT invent company facts):
 ${companyResearch || "(no research available)"}
 
-The cover letter MUST demonstrate three things:
-(a) you read the description — mirror the actual stack/skills it asks for,
-(b) you know the company — reference something real from the research or their public products,
-(c) why they need someone like you — map 1-2 REAL portfolio projects to their problems.
+COVER LETTER — follow the template EXACTLY, in this order, filling each part with real, job-specific content:
 
-Format: 2-4 short plain paragraphs, first person. No headings, no bullets, no hashtags. End with "Victor Agu".
+Hello [Hiring Manager Name],
+I came across your opening for [Job Title], and it immediately caught my attention because [brief, direct reason tied to THIS job and company].
+Instead of just listing past tasks, here is a direct look at the systems and AI solutions I have actually built and shipped in production:
+[Project 1]: [1-sentence engineering description]. You can check it out live here: [URL only if the project has a real URL]
+[Project 2]: [1-sentence engineering description]. You can check it out live here: [URL only if the project has a real URL]
+[Only if the testimonial above is non-empty: Feedback from past collaborators/clients: "[the real quote]"]
+As [a fitting role title — e.g. "an AI & AI Integration Engineer" or adapt to the job], my core focus is building production-grade workflows, multi-agent systems, and cloud infrastructure that hold up under real-world usage.
+We can set up a brief call to discuss how we can cleanly integrate these AI systems into your current stack and map out how this can play out for your team.
+Best regards,
+Victor Agu
+[${links}]
+P.S. [a light, professional human touch — MUST be different for every job, tied to THIS job's description and company]
 
-Also extract the screening questions from the JD (e.g. "Why are you a good fit?", "What is your salary expectation?") and write short, honest, natural answers in the same voice.
+RULES:
+- Use 1-2 projects max, the most relevant to the job. CloudVoid (https://cloudvoid.online) and Myzelva (https://myzelva.com) have live URLs — prefer them. ForChi and Flamchi are live 24/7 production Telegram bots with no web URL — say "live in production on Telegram" instead of a URL.
+- If the hiring manager's name is unknown, use "Hello," — never invent a name.
+- The reason line and the P.S. MUST reference this specific job and company (prove you read the JD and know them).
+- Replace every [bracket] with real content. Keep the whole letter SHORT.
 
 Return JSON ONLY:
-{"coverLetter": "string", "answers": [{"question": "string", "answer": "string"}]}`;
+{"coverLetter": "the completed letter as plain text", "answers": [{"question": "string", "answer": "short natural answer"}]}`;
 
   try {
     const raw = await generate(prompt, { type: "object", maxTokens: 1200 });
