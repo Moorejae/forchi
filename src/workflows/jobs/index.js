@@ -1,7 +1,7 @@
 // Jobs pipeline orchestrator: discover → match → research → write → tailor → apply.
 const { discoverJobs } = require("./sources/index");
 const db = require("./db");
-const { scoreJob } = require("./matcher");
+const { scoreJob, isLocationAllowed } = require("./matcher");
 const { researchCompany } = require("./researcher");
 const { writeApplication } = require("./writer");
 const { tailorResume } = require("./tailor");
@@ -69,6 +69,14 @@ async function runOnce() {
   const newJobs = await db.getNewJobs(MAX_PER_RUN);
   const tally = { applied: 0, prepared: 0, skipped: 0, failed: 0 };
   for (const job of newJobs) {
+    // HARD LOCATION RULE (backstop, enforced even if the model errs):
+    // remote roles only — hybrid/onsite require explicit visa sponsorship.
+    if (!isLocationAllowed(job)) {
+      await db.setJobStatus(job.id, "skipped");
+      tally.skipped++;
+      console.log(`[Jobs] skipped ${job.company} / ${job.title} — not remote and no visa sponsorship`);
+      continue;
+    }
     const m = await scoreJob(job);
     await db.setJobScore(job.id, m.score);
     if (!m.apply) {

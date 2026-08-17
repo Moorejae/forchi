@@ -52,6 +52,7 @@ VOICE & FORMAT RULES (CRITICAL):
 REAL CANDIDATE DATA (use ONLY this):
 - Title: ${PROFILE.title}
 - Summary: ${PROFILE.summary}
+- Salary expectation (if asked for salary, answer with this — NEVER above $5,000/month): "${PROFILE.salaryExpectation || "negotiable, under $5,000/month"}"
 - Testimonial (if empty, omit the quote line — never invent one): "${PROFILE.testimonial}"
 - Real projects: ${portfolioText}
 

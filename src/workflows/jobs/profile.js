@@ -55,7 +55,8 @@ const PROFILE = {
   // ATS application-form answers (standard fields). Tweak as needed.
   yearsExperience: 3, // earliest real project (2024) → ~3 years
   workAuthorization: "Authorized to work remotely worldwide; based in Lagos, Nigeria (WAT)",
-  salaryExpectation: "", // optional — set to pre-fill salary fields (e.g. "negotiable")
+  // Salary the AI fills into forms — user rule: any amount BELOW $5,000/month.
+  salaryExpectation: "$3,500 per month",
   certifications: [
     "Cloud Computing Certification, Digital Witch (2026)",
     "Certified Customer Service Professional, CURSA (2025)",
