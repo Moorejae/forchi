@@ -135,7 +135,7 @@ async function submitGreenhouse(job, app, resumeBuf) {
   fd.append("last_name", PROFILE.identity.lastName);
   fd.append("email", PROFILE.identity.email);
   fd.append("phone", PROFILE.identity.phone || "");
-  fd.append("cover_letter", app.coverLetter || "");
+  if (app.coverLetter) fd.append("cover_letter", app.coverLetter);
   fdAppendFile(fd, "resume", resumeBuf, "Victor_Agu_Resume.pdf");
   const url = `https://boards-api.greenhouse.io/v1/boards/${job.board || job.company.toLowerCase()}/jobs/${job.ref_id}/application`;
   const res = await fetch(url, { method: "POST", body: fd, signal: AbortSignal.timeout(60000) });
@@ -164,7 +164,7 @@ async function submitWorkable(job, app, resumeBuf) {
   fd.append("name", PROFILE.identity.fullName);
   fd.append("email", PROFILE.identity.email);
   fd.append("phone", PROFILE.identity.phone || "");
-  fd.append("cover_letter", app.coverLetter || "");
+  if (app.coverLetter) fd.append("cover_letter", app.coverLetter);
   fdAppendFile(fd, "resume", resumeBuf, "Victor_Agu_Resume.pdf");
   const url = `https://apply.workable.com/api/v3/accounts/${job.board || job.company.toLowerCase()}/jobs/${job.ref_id}/apply`;
   const res = await fetch(url, { method: "POST", body: fd, signal: AbortSignal.timeout(60000) });
@@ -178,7 +178,7 @@ async function submitAshby(job, app, resumeBuf) {
   fd.append("name", PROFILE.identity.fullName);
   fd.append("email", PROFILE.identity.email);
   fd.append("phone", PROFILE.identity.phone || "");
-  fd.append("comments", app.coverLetter || "");
+  if (app.coverLetter) fd.append("comments", app.coverLetter);
   fdAppendFile(fd, "resume", resumeBuf, "Victor_Agu_Resume.pdf");
   const url = `https://jobs.ashbyhq.com/${job.board || job.company.toLowerCase()}/${job.ref_id}/application`;
   const res = await fetch(url, { method: "POST", body: fd, signal: AbortSignal.timeout(60000) });
