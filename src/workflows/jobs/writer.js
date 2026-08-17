@@ -3,13 +3,24 @@
 const { generate } = require("../../llm/provider");
 const { PROFILE } = require("./profile");
 const { PORTFOLIO } = require("./portfolio");
+const { detectLanguage, translateText } = require("./lang");
 
-// Not every job wants a cover letter — only write one when the posting asks for it.
+// Not every job wants a cover letter — only write one when the posting asks for it
+// (in English or the job's own language).
 function jobNeedsCoverLetter(job) {
   const d = ((job.description || "") + " " + (job.title || "")).toLowerCase();
-  return /cover ?letter/.test(d) ||
-    /please (include|attach|provide|write).{0,50}cover/i.test(d) ||
-    /\b(?:a|one|the) cover letter\b/.test(d);
+  if (/cover ?letter|please (include|attach|provide|write).{0,50}cover|\b(?:a|one|the) cover letter\b/.test(d)) return true;
+  const lang = detectLanguage(job.description || "");
+  const translated = {
+    Polish: /listu? motywacyjn(ego|ego|ym|a|e)/,
+    German: /anschreiben|bewerbungsschreiben/,
+    Spanish: /carta de presentaci[oó]n/,
+    French: /lettre de motivation/,
+    Portuguese: /carta de apresenta[cç][aã]o/,
+    Dutch: /motivatiebrief/,
+    Italian: /lettera di presentazione|lettera motivazionale/,
+  };
+  return translated[lang] ? translated[lang].test(d) : false;
 }
 
 async function writeApplication({ job, companyResearch }) {
@@ -18,9 +29,12 @@ async function writeApplication({ job, companyResearch }) {
     null, 1
   );
   const withCoverLetter = jobNeedsCoverLetter(job);
+  const lang = detectLanguage(job.description || "");
 
   const coverInstructions = withCoverLetter
-    ? `COVER LETTER — this job wants a cover letter. Follow the template EXACTLY, in this order, filling each part with real, job-specific content:
+    ? `LANGUAGE REMINDER: The entire letter MUST be written in ${lang}. The template below is shown in English ONLY to show the structure — translate every line into ${lang}. Absolutely no English in the output.
+
+COVER LETTER — this job wants a cover letter. Follow the template EXACTLY, in this order, filling each part with real, job-specific content:
 
 Hello [Hiring Manager Name],
 I came across your opening for [Job Title], and it immediately caught my attention because [brief, direct reason tied to THIS job and company].
@@ -48,7 +62,7 @@ VOICE & FORMAT RULES (CRITICAL):
 - NO AI spacing: no dash characters (— or -), no hashes (#), no stars (* or **), no bullet markers, no markdown. Plain clean lines only.
 - SHORT. Never pad.
 - NEVER invent facts, projects, URLs, quotes, or numbers that are not in the real data below.
-- LANGUAGE: Write the cover letter and answers in the SAME language as the job description. If the description is not in English, produce the output in that language (translate the real English facts faithfully).
+- LANGUAGE: The job description is in ${lang}. Write the cover letter and screening answers ENTIRELY in ${lang} (the candidate's real facts are given in English — translate them faithfully). Do NOT mix languages.
 
 REAL CANDIDATE DATA (use ONLY this):
 - Title: ${PROFILE.title}
@@ -73,15 +87,21 @@ ${coverInstructions}
 Also extract the screening questions from the JD and write short, honest, natural answers in the same voice (if the JD has none, answers = []).
 
 Return JSON ONLY:
-{"coverLetter": "string — empty when no cover letter is required", "answers": [{"question": "string", "answer": "short natural answer"}]}`;
+{"coverLetter": "string — empty when no cover letter is required", "answers": [{"question": "string", "answer": "short natural answer"}]}
+
+REMINDER BEFORE ANSWERING: if the job is not in English, "coverLetter" and every "answer" MUST be entirely in ${lang}. Never output English for a non-English job.`;
 
   try {
     const raw = await generate(prompt, { type: "object", maxTokens: 1200 });
     const p = JSON.parse(raw);
-    return {
-      coverLetter: p.coverLetter || "",
-      answers: Array.isArray(p.answers) ? p.answers : [],
-    };
+    let coverLetter = p.coverLetter || "";
+    let answers = Array.isArray(p.answers) ? p.answers : [];
+    // Hard guarantee: for non-English jobs, translate the output into the job's language.
+    if (lang !== "English") {
+      coverLetter = await translateText(coverLetter, lang);
+      answers = await Promise.all(answers.map(async (a) => ({ ...a, answer: await translateText(a.answer, lang) })));
+    }
+    return { coverLetter, answers };
   } catch (e) {
     console.warn("[Jobs] Writer failed:", e.message);
     return { coverLetter: "", answers: [] };

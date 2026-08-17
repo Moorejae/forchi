@@ -192,20 +192,75 @@ async function fetchFormSchema(job) {
       const res = await fetch(`https://boards-api.greenhouse.io/v1/boards/${job.board || job.company.toLowerCase()}/jobs/${job.ref_id}`, { signal: AbortSignal.timeout(15000) });
       if (res.ok) {
         const d = await res.json();
-        return (d.questions || []).map((q) => ({ key: String(q.name || q.id || q.label || ""), label: q.label || q.name || q.title || "", required: !!q.required }));
+        return (d.questions || []).map((q) => {
+          const opts = [];
+          for (const f of q.fields || []) for (const c of f.choices || []) opts.push({ label: c.label, value: c.value ?? c.label });
+          for (const c of q.choices || []) opts.push({ label: c.label, value: c.value ?? c.label });
+          return { key: String(q.name || q.id || q.label || ""), label: q.label || q.name || q.title || "", required: !!q.required, options: opts };
+        });
       }
     } else if (job.source === "lever") {
       const res = await fetch(`https://api.lever.co/v0/postings/${job.board || job.company.toLowerCase()}/${job.ref_id}?mode=json`, { signal: AbortSignal.timeout(15000) });
       if (res.ok) {
         const d = await res.json();
         const all = [...(d.additionalQuestions || []), ...(d.customQuestions || [])];
-        return all.map((q) => ({ key: q.id || "", label: q.text || "", required: !!q.required }));
+        return all.map((q) => ({
+          key: q.id || "",
+          label: q.text || "",
+          required: !!q.required,
+          options: (q.choices || []).map((c) => ({ label: c.label, value: c.value ?? c.label })),
+        }));
       }
     }
   } catch (e) {
     console.warn(`[Jobs] form schema fetch failed (${job.source}): ${e.message}`);
   }
   return null;
+}
+
+// For dropdown/select fields, choose the option that best matches our answer.
+function pickOption(options, value) {
+  const val = String(value || "").toLowerCase();
+  if (!options || !options.length) return value;
+  const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const vNorm = norm(val);
+
+  // 0. Negation preference: if our value is negative, prefer an option with the same sign
+  //    (e.g. "not authorized" -> "No, I am not authorized", never "Yes").
+  const negValue = /\b(no|not|unable|without|none)\b/.test(val);
+  if (negValue) {
+    const negOpt = options.find((o) => /\b(no|not|unable|without|none)\b/.test(`${o.label || ""} ${o.value || ""}`));
+    if (negOpt) return negOpt.value ?? negOpt.label;
+  }
+
+  // 1. Exact normalized match.
+  for (const o of options) {
+    const a = norm(o.label); const b = norm(o.value);
+    if ((a && a === vNorm) || (b && b === vNorm)) return o.value ?? o.label;
+  }
+
+  // 2. Numeric/range match using RAW labels (preserve "-" / "," separators).
+  const digits = (val.match(/\d+/g) || []).map(Number);
+  if (digits.length) {
+    for (const o of options) {
+      const label = String(o.label || "").replace(/,/g, ""); // "3,000" -> "3000"
+      const nums = (label.match(/\d+/g) || []).map(Number);
+      if (nums.length === 2 && digits.some((d) => d >= nums[0] && d <= nums[1])) return o.value ?? o.label;
+      if (nums.length === 1 && /\+|and above|max/i.test(label) && digits[0] >= nums[0]) return o.value ?? o.label;
+      if (nums.length === 1 && /under|less than|up to|max/i.test(label) && digits[0] <= nums[0]) return o.value ?? o.label;
+    }
+  }
+
+  // 3. Shared keyword match (meaningful tokens).
+  const tokens = val.split(/\s+/).filter((w) => w.length > 3);
+  for (const o of options) {
+    const hay = norm(`${o.label || ""} ${o.value || ""}`);
+    if (tokens.some((t) => hay.includes(t))) return o.value ?? o.label;
+  }
+
+  // 4. Fallback: a neutral/other option, else null (caller skips optional fields).
+  const fallback = options.find((o) => /other|prefer not|none|n\/a/i.test(`${o.label || ""} ${o.value || ""}`));
+  return fallback ? (fallback.value ?? fallback.label) : null;
 }
 
 async function buildFormData(job, app, ensure = {}) {
@@ -226,21 +281,25 @@ async function buildFormData(job, app, ensure = {}) {
     for (const f of schema) {
       if (out.has(f.key)) continue;
       const tag = fuzzyMatch(`${f.label} ${f.key}`);
+      let val = null;
       if (tag) {
-        if (tag === "source") put(f.key, "Found via an AI job-search agent");
-        else if (tag === "years") put(f.key, std.years);
-        else if (tag === "workAuth") put(f.key, std.workAuth);
-        else if (tag === "clearance") put(f.key, std.clearance);
-        else if (tag === "salary") { if (std.salary) put(f.key, std.salary); }
-        else if (tag === "linkedin") put(f.key, std.linkedin);
-        else if (tag === "github") put(f.key, std.github);
-        else if (tag === "portfolio") put(f.key, std.portfolio);
-        else if (tag === "location") put(f.key, std.location);
-        else if (tag !== "email" && tag !== "phone" && tag !== "firstName" && tag !== "lastName" && tag !== "fullName") put(f.key, std[tag]);
+        if (tag === "source") val = "Found via an AI job-search agent";
+        else if (tag === "years") val = std.years;
+        else if (tag === "workAuth") val = std.workAuth;
+        else if (tag === "clearance") val = std.clearance;
+        else if (tag === "salary") val = std.salary || null;
+        else if (tag === "linkedin") val = std.linkedin;
+        else if (tag === "github") val = std.github;
+        else if (tag === "portfolio") val = std.portfolio;
+        else if (tag === "location") val = std.location;
+        else if (tag !== "email" && tag !== "phone" && tag !== "firstName" && tag !== "lastName" && tag !== "fullName") val = std[tag] ?? null;
       } else {
-        const ans = matchPreparedAnswer(f.label, app);
-        if (ans) put(f.key, ans);
+        val = matchPreparedAnswer(f.label, app);
       }
+      if (val === null || val === undefined || String(val) === "") continue;
+      // Dropdown/select fields must use one of the allowed options.
+      const picked = f.options && f.options.length ? pickOption(f.options, val) : val;
+      if (picked !== null && picked !== undefined && String(picked) !== "") put(f.key, picked);
     }
   } else {
     // No schema available — send only the core identity fields (already added
@@ -342,4 +401,4 @@ async function submitApplication(job, app) {
   }
 }
 
-module.exports = { submitApplication, getResumeBuffer, buildFormData, fetchFormSchema, AUTO_APPLY, DAILY_CAP, inApplyWindow };
+module.exports = { submitApplication, getResumeBuffer, buildFormData, fetchFormSchema, pickOption, AUTO_APPLY, DAILY_CAP, inApplyWindow };

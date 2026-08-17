@@ -3,9 +3,10 @@
 const { generate } = require("../../llm/provider");
 const { PROFILE } = require("./profile");
 const { PORTFOLIO } = require("./portfolio");
+const { detectLanguage, translateText } = require("./lang");
 
 async function tailorResume(job) {
-  const realData = JSON.stringify({
+  const lang = detectLanguage(job.description || "");  const realData = JSON.stringify({
     profile: {
       name: PROFILE.name,
       title: PROFILE.title,
@@ -32,7 +33,7 @@ REQUIREMENTS:
 
 HARD RULES:
 - Keep EVERY fact real. Never invent employers, titles, years, numbers, projects, or URLs. Only the profile + portfolio facts below may be used.
-- LANGUAGE: If the job description is not in English, write the tailored resume in that same language (translate the real facts faithfully).
+- LANGUAGE: The job description is in ${lang}. Write the ENTIRE tailored resume in ${lang} (the candidate's real facts are given in English — translate them faithfully). Do NOT mix languages.
 - Plain text only: no markdown symbols, no hashtags, no tables, no bullets with asterisks or dashes. Use clean lines.
 - ONE PAGE: keep it tight — summary max 2 sentences, skills 3-4 compact lines, each project max 2 short bullets, each experience entry max 2 short lines, certifications 1 line each. Shorten until it fits one US Letter page.
 
@@ -45,20 +46,24 @@ JOB:
 - Description: ${(job.description || "").slice(0, 5000)}
 
 Return JSON ONLY:
-{"resumeText": "the full tailored resume as clean plain text, ending with the CERTIFICATIONS section"}`;
+{"resumeText": "the full tailored resume as clean plain text, ending with the CERTIFICATIONS section"}
+
+REMINDER BEFORE ANSWERING: if the job is not in English, EVERY line of "resumeText" MUST be entirely in ${lang} — headings, summary, skills, projects, experience, certifications. Never output English for a non-English job.`;
 
   try {
     const raw = await generate(prompt, { type: "object", maxTokens: 1500 });
     const p = JSON.parse(raw);
-    // Strip URL schemes so links render as bare domains (matching the original resume).
-    return (p.resumeText || "").replace(/https?:\/\//g, "").trim();
+    const resume = (p.resumeText || "").replace(/https?:\/\//g, "").trim();
+    // Hard guarantee: for non-English jobs, translate the whole resume.
+    return lang === "English" ? resume : await translateText(resume, lang);
   } catch (e) {
     console.warn("[Jobs] Tailor failed:", e.message);
     // Retry once with a conciseness constraint to stay under the token budget.
     try {
       const raw2 = await generate(`${prompt}\n\nIMPORTANT: Keep the resume CONCISE — under 1800 characters total.`, { type: "object", maxTokens: 1500 });
       const p = JSON.parse(raw2);
-      return (p.resumeText || "").trim();
+      const resume2 = (p.resumeText || "").replace(/https?:\/\//g, "").trim();
+      return lang === "English" ? resume2 : await translateText(resume2, lang);
     } catch (e2) {
       console.warn("[Jobs] Tailor retry failed:", e2.message);
       return "";
