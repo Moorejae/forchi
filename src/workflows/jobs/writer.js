@@ -9,7 +9,6 @@ async function writeApplication({ job, companyResearch }) {
     PORTFOLIO.map((p) => ({ project: p.project, role: p.role, years: p.years, url: p.url, facts: p.facts })),
     null, 1
   );
-  const links = (PROFILE.portfolioLinks || []).join(" | ");
 
   const prompt = `You are writing a JOB APPLICATION cover letter for ${PROFILE.name} ("Victor"), IN HIS VOICE, following HIS exact template.
 
@@ -22,7 +21,6 @@ VOICE & FORMAT RULES (CRITICAL):
 REAL CANDIDATE DATA (use ONLY this):
 - Title: ${PROFILE.title}
 - Summary: ${PROFILE.summary}
-- Contact links: ${links}
 - Testimonial (if this is empty, OMIT the feedback line entirely — do NOT invent a quote): "${PROFILE.testimonial}"
 - Real projects: ${portfolioText}
 
@@ -45,13 +43,12 @@ Instead of just listing past tasks, here is a direct look at the systems and AI 
 As [a fitting role title — e.g. "an AI & AI Integration Engineer" or adapt to the job], my core focus is building production-grade workflows, multi-agent systems, and cloud infrastructure that hold up under real-world usage.
 We can set up a brief call to discuss how we can cleanly integrate these AI systems into your current stack and map out how this can play out for your team.
 Best regards,
-Victor Agu
-[${links}]
 P.S. [a light, professional human touch — MUST be different for every job, tied to THIS job's description and company]
 
 RULES:
-- Use 1-2 projects max, the most relevant to the job. Myzelva (https://myzelva.com) is the candidate's live prompt-engineering portfolio site — always include it (as one of the projects or it stays in the portfolio links in the signature). CloudVoid (https://cloudvoid.online) also has a live URL — prefer these two. ForChi and Flamchi are live 24/7 production Telegram bots with no web URL — say "live in production on Telegram" instead of a URL.
+- Use 1-2 projects max, the most relevant to the job. Myzelva (https://myzelva.com) is the candidate's live prompt-engineering portfolio site — always include it as one of the projects. CloudVoid (https://cloudvoid.online) also has a live URL — prefer these two. ForChi and Flamchi are live 24/7 production Telegram bots with no web URL — say "live in production on Telegram" instead of a URL.
 - If the hiring manager's name is unknown, use "Hello," — never invent a name.
+- Sign with ONLY "Best regards," — no name and no links after it.
 - The reason line and the P.S. MUST reference this specific job and company (prove you read the JD and know them).
 - Replace every [bracket] with real content. Keep the whole letter SHORT.
 
