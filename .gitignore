@@ -32,6 +32,11 @@ tools/test_pollinations.py
 tools/test_gemini_audio.py
 tools/create_img_space.py
 *.pdf
+# The jobs agent needs the base resume bundled for the deploy, so un-ignore it:
+!data/resume/
+!data/resume/*.pdf
+# Jobs runtime DB — local data, not source:
+data/jobs.db
 temp/*.png
 temp/*.jpg
 temp/*.jpeg

@@ -85,7 +85,7 @@ function withTimeout(promise, ms, label) {
 }
 
 // ── Gemini single-key attempt ─────────────────────────────────────────────────
-async function callGeminiKey(apiKey, prompt, isJson = false) {
+async function callGeminiKey(apiKey, prompt, isJson = false, maxTokens = 600) {
   const genAI = new GoogleGenerativeAI(apiKey);
 
   for (const modelId of GEMINI_MODEL_TIERS) {
@@ -101,7 +101,7 @@ async function callGeminiKey(apiKey, prompt, isJson = false) {
         model.generateContent({
           contents: [{ role: "user", parts: [{ text: prompt }] }],
           systemInstruction: { parts: [{ text: systemInstruction }] },
-          generationConfig: { temperature: isJson ? 0.0 : 0.7, maxOutputTokens: 600 },
+          generationConfig: { temperature: isJson ? 0.0 : 0.7, maxOutputTokens: maxTokens },
         }),
         60000,
         "Gemini request"
@@ -123,7 +123,7 @@ async function callGeminiKey(apiKey, prompt, isJson = false) {
 }
 
 // ── Full Gemini waterfall across configured keys ──────────────────────────────
-async function callGemini(prompt, isJson = false) {
+async function callGemini(prompt, isJson = false, maxTokens = 600) {
   const keys = getGeminiKeys();
   if (!keys.length) {
     console.warn("[Provider] No GEMINI_KEYS configured — skipping Gemini tier");
@@ -132,7 +132,7 @@ async function callGemini(prompt, isJson = false) {
 
   for (let i = 0; i < keys.length; i++) {
     try {
-      const result = await callGeminiKey(keys[i], prompt, isJson);
+      const result = await callGeminiKey(keys[i], prompt, isJson, maxTokens);
       if (result !== null) {
         console.log(`[Provider] ✅ Gemini succeeded on key ${i + 1}/${keys.length}`);
         return result;
@@ -203,9 +203,12 @@ async function callHFFallback(prompt, isJson = false) {
 // ── Main generate() — full fallback chain ─────────────────────────────────────
 async function generate(prompt, responseJsonSchema = null) {
   const isJson = !!responseJsonSchema;
+  const maxTokens = responseJsonSchema && typeof responseJsonSchema === "object" && responseJsonSchema.maxTokens
+    ? responseJsonSchema.maxTokens
+    : 600;
 
   // Tier 1: Gemini key waterfall
-  let result = await callGemini(prompt, isJson);
+  let result = await callGemini(prompt, isJson, maxTokens);
   if (result) return cleanResponse(result, isJson);
 
   // Tier 2: Self-hosted GGUF (Qwen2.5-7B via HF llama.cpp Space)

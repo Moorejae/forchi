@@ -12,6 +12,9 @@ const { processVoiceMessage } = require("./voice/transcriber");
 const { initScheduler } = require("./scheduler/jobs");
 const autoMode = require("./scheduler/autoMode");
 const db = require("./store/db");
+const jobsScheduler = require("./workflows/jobs/scheduler");
+const { registerJobsCommands } = require("./workflows/jobs/commands");
+const jobsMode = require("./workflows/jobs/jobsMode");
 
 // Force IPv4 for DNS resolution (avoids IPv6 timeouts in containers)
 if (dns.setDefaultResultOrder) dns.setDefaultResultOrder("ipv4first");
@@ -47,7 +50,11 @@ const bot = new Telegraf(token, {
 
 // ── Database + Scheduler ──────────────────────────────────────────────────────
 db.getDB()
-  .then(() => initScheduler())
+  .then(() => {
+    initScheduler();
+    jobsScheduler.startJobsScheduler({ bot });
+    registerJobsCommands(bot);
+  })
   .catch((err) => console.error("[DB Error]", err.message));
 
 // Chat reply is decoupled from the Telegram handler: we show a live typing
@@ -172,6 +179,8 @@ const server = http.createServer((req, res) => {
       bot: "ForChi",
       mode: "long-polling",
       autoMode: autoMode.isEnabled() ? "on" : "off",
+      jobsMode: jobsMode.isEnabled() ? "on" : "off",
+      jobsApply: (process.env.JOBS_AUTO_APPLY || "false") === "true" ? "live" : "dry-run",
       utc: new Date().toISOString(),
       schedule: "0 0,8,12,16,20 * * * UTC",
     }));
