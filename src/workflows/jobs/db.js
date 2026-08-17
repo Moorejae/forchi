@@ -55,12 +55,17 @@ async function getJobsDB() {
 }
 
 // Insert discovered jobs, ignoring duplicates. Returns count of NEW jobs added.
+// Dedup is BOTH per-source (unique index) AND across sources (same url seen via
+// e.g. Remotive + our Greenhouse board must never create two rows → never
+// double-applied).
 async function insertJobs(list) {
   const db = await getJobsDB();
   const now = new Date().toISOString();
   let added = 0;
   for (const j of list || []) {
     if (!j || !j.company || !j.title || !j.url) continue;
+    const seen = await db.get(`SELECT 1 FROM jobs WHERE url = ?`, [j.url]);
+    if (seen) continue;
     const r = await db.run(
       `INSERT OR IGNORE INTO jobs (source, ref_id, board, company, title, url, location, salary, description, posted_at, status, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)`,
@@ -165,6 +170,7 @@ async function getStats() {
   const db = await getJobsDB();
   const total = await db.get(`SELECT COUNT(*) AS c FROM jobs`);
   const byStatus = await db.all(`SELECT status, COUNT(*) AS c FROM jobs GROUP BY status`);
+  const bySource = await db.all(`SELECT source, COUNT(*) AS c FROM jobs GROUP BY source`);
   const applied = await db.get(`SELECT COUNT(*) AS c FROM applications WHERE submitted = 1`);
   const pending = await db.get(`SELECT COUNT(*) AS c FROM jobs WHERE status = 'matched'`);
   return {
@@ -172,6 +178,7 @@ async function getStats() {
     applied: applied ? applied.c : 0,
     pendingApply: pending ? pending.c : 0,
     byStatus: Object.fromEntries(byStatus.map((r) => [r.status, r.c])),
+    bySource: Object.fromEntries(bySource.map((r) => [r.source, r.c])),
   };
 }
 

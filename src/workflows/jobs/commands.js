@@ -22,7 +22,13 @@ async function formatStatus() {
 async function listQueue() {
   const rows = await db.getJobsByStatus("matched", 15);
   if (!rows.length) return "No jobs queued for apply.";
-  return "📥 *Queued for apply:*\n" + rows.map((j) => `• ${j.company} — ${j.title} (score ${j.match_score ?? "?"})`).join("\n");
+  const AUTO_SOURCES = ["greenhouse", "lever", "workable", "ashby"];
+  const lines = rows.map((j) => {
+    const auto = AUTO_SOURCES.includes(j.source);
+    const tag = auto ? "" : "· 🔗 manual apply";
+    return `• ${j.company} — ${j.title} (score ${j.match_score ?? "?"})${tag}\n   ${j.url}`;
+  });
+  return "📥 *Queued for apply:*\n" + lines.join("\n");
 }
 
 async function listApplied() {

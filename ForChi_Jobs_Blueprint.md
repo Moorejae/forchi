@@ -124,6 +124,34 @@ src/workflows/jobs/
 ## 6. Free-tier feasibility
 - Scraping: plain HTTP/fetch + JSON — cheap, no browser.
 - Matching/writing: Gemini free tier with the existing 14-key rotation (a few hundred short calls/day is well within quota).
+
+---
+
+## 7. v3 — EXPANDED SOURCES (LinkedIn + aggregators)
+The scan went from 2 boards + 25 companies to **9 source channels** (~2,500 jobs/discovery pass, ~17s):
+
+| Source | Type | Auto-apply? |
+|---|---|---|
+| Greenhouse / Lever (23 named cos: OpenAI, Anthropic, Stripe, Netflix…) | ATS boards | ✅ auto |
+| Workable / Ashby (ATS-resolved from feeds) | ATS boards | ✅ auto |
+| RemoteOK | remote board | manual (semi-auto) |
+| WeWorkRemotely | remote board | manual (semi-auto) |
+| **Remotive** | free JSON API | manual (semi-auto) |
+| **Jobicy** | free JSON API | manual (semi-auto) |
+| **Arbeitnow** | free JSON API | manual (semi-auto) |
+| **Himalayas** | free JSON API | manual (semi-auto) |
+| **LinkedIn** (guest jobs endpoint) | public search API | manual (semi-auto) |
+
+### Key decisions (locked)
+- **LinkedIn = guest jobs API, not web search.** `linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search` (no auth) returns 10 structured cards per query; we run 8 target-role keywords with `f_WT=2` (remote-only). Web-search scraping yielded ~1 job/scan; the guest API yields **~40–50**. Each posting's description is fetched for the matcher (og:description / JSON-LD, best-effort).
+- **Aggregator feeds pre-filter by keyword** (AI/LLM/cloud/devops/backend/automation/python/node…) so we don't insert hundreds of irrelevant listings and burn Gemini scoring calls.
+- **Cross-source URL dedup** — the same real posting found via Remotive + a Greenhouse board is stored once (URL unique check in `insertJobs`), so it can never be double-applied.
+- **Semi-auto ≠ auto.** Aggregator + LinkedIn jobs are scored and queued, shown in `/jobs queue` **with their apply URL + a "manual apply" marker**, but never auto-submitted (no trusted submitter for them). The retry loop only re-attempts auto-appliable sources, so manual jobs don't churn every scan.
+- ATS detection: if any feed listing points *directly* at a Greenhouse/Lever/Ashby/Workable posting URL, it's rewritten to that source and auto-applied by the existing engine (currently feeds link to their own pages, so this is a safety net for future feeds).
+
+### Cost/scale guardrails
+- Scans cap at ~40 LinkedIn cards + ~250 filtered aggregator jobs; `MAX_PER_RUN=25` scores per pass, so the backlog drains gradually and Gemini quota stays flat.
+- Daily report now shows a **source breakdown** (`🗂 Sources: greenhouse=… · linkedin=… · …`).
 - Hosting: Render free tier + existing keep-alive.
 - Storage: SQLite (existing `data/`).
 - Only deviation: if a specific target company's careers page requires JS rendering, add Playwright **only for that one page** (opt-in).

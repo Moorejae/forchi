@@ -90,7 +90,11 @@ async function runOnce() {
   }
 
   // 3. Retry already-prepared (matched) jobs when the window/cap opens up.
-  const queued = await db.getJobsByStatus("matched");
+  //    Only AUTO-APPLIABLE sources are retried; semi-auto sources (linkedin,
+  //    remotive, jobicy, arbeitnow, himalayas, remoteok, weworkremotely) have
+  //    no submitter, so they stay queued as a manual-apply list.
+  const AUTO_SOURCES = ["greenhouse", "lever", "workable", "ashby"];
+  const queued = (await db.getJobsByStatus("matched")).filter((j) => AUTO_SOURCES.includes(j.source));
   for (const job of queued.slice(0, MAX_PER_RUN)) {
     const appRow = await db.getApplicationForJob(job.id);
     if (!appRow) continue;

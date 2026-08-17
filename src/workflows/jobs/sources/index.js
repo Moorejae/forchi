@@ -2,6 +2,8 @@
 const { getTargetCompanies } = require("./companies");
 const { fetchCompanyBoard } = require("./ats");
 const { fetchRemoteOK, fetchWeWorkRemotely } = require("./remote");
+const { fetchAggregators } = require("./aggregators");
+const { fetchLinkedInJobs } = require("./linkedin");
 
 const CONCURRENCY = 6;
 
@@ -41,12 +43,16 @@ async function discoverJobs() {
   const remoteTasks = [
     async () => { try { return await fetchRemoteOK(); } catch (e) { logs.push(`[Jobs] remoteok skipped (${e.message})`); return []; } },
     async () => { try { return await fetchWeWorkRemotely(); } catch (e) { logs.push(`[Jobs] weworkremotely skipped (${e.message})`); return []; } },
+    async () => { try { return await fetchAggregators(); } catch (e) { logs.push(`[Jobs] aggregators skipped (${e.message})`); return []; } },
+    async () => { try { return await fetchLinkedInJobs(); } catch (e) { logs.push(`[Jobs] linkedin skipped (${e.message})`); return []; } },
   ];
 
   const all = await runWithConcurrency([...boardTasks, ...remoteTasks], CONCURRENCY);
   for (const l of logs) console.log(l);
   const jobs = all.filter(Boolean).flat();
-  console.log(`[Jobs] Discovered ${jobs.length} raw jobs across ${companies.length} companies + remote boards.`);
+  const bySource = {};
+  for (const j of jobs) bySource[j.source] = (bySource[j.source] || 0) + 1;
+  console.log(`[Jobs] Discovered ${jobs.length} raw jobs — ${Object.entries(bySource).map(([k, v]) => `${k}=${v}`).join(", ")}`);
   return jobs;
 }
 

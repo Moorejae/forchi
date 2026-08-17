@@ -43,6 +43,14 @@ async function buildDailyReportText() {
     `🔍 Total jobs seen: ${s.totalJobs}`,
     `🛰 Mode: ${s.mode} · Cap: ${s.cap}/day`,
   ];
+  if (s.bySource && Object.keys(s.bySource).length) {
+    const src = Object.entries(s.bySource)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([k, v]) => `${k}=${v}`)
+      .join(" · ");
+    parts.push(`🗂 Sources: ${src}`);
+  }
   if (applied && applied.length) {
     parts.push(`━━━━━━━━━━━━━━━━━━`);
     parts.push(`*Recent applications:*`);
