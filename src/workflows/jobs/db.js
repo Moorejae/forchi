@@ -143,6 +143,15 @@ async function countAppliedToday() {
   return row ? row.c : 0;
 }
 
+async function countAppliedSince(iso) {
+  const db = await getJobsDB();
+  const row = await db.get(
+    `SELECT COUNT(*) AS c FROM applications WHERE submitted = 1 AND applied_at >= ?`,
+    [iso]
+  );
+  return row ? row.c : 0;
+}
+
 async function getApplied() {
   const db = await getJobsDB();
   return db.all(

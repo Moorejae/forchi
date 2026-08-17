@@ -15,6 +15,7 @@ const db = require("./store/db");
 const jobsScheduler = require("./workflows/jobs/scheduler");
 const { registerJobsCommands } = require("./workflows/jobs/commands");
 const jobsMode = require("./workflows/jobs/jobsMode");
+const jobsNotify = require("./workflows/jobs/notifyTarget");
 
 // Force IPv4 for DNS resolution (avoids IPv6 timeouts in containers)
 if (dns.setDefaultResultOrder) dns.setDefaultResultOrder("ipv4first");
@@ -79,6 +80,8 @@ async function handleChat(ctx, text) {
 // ── Core message handler (Blueprint Section 3 — three exits) ──────────────────
 async function handleIncomingText(ctx, text) {
   console.log(`[Inbound Message] From: ${ctx.from?.first_name || "?"} (${ctx.from?.id}) | Text: "${text}"`);
+  // Auto-register this chat so the daily jobs report reaches the user.
+  jobsNotify.setChatId(ctx.chat && ctx.chat.id);
 
   // Auto-mode toggle command — checked BEFORE gate/extractor so it always works.
   // Only fires when one line contains BOTH the action ("turn/switch on|off")
@@ -166,7 +169,10 @@ bot.on("voice", async (ctx) => {
   }
 });
 
-bot.start((ctx) => ctx.reply("ForChi active and listening."));
+bot.start((ctx) => {
+  jobsNotify.setChatId(ctx.chat && ctx.chat.id);
+  return ctx.reply("ForChi active and listening. Jobs agent: send /jobs for status.");
+});
 
 // ── HTTP Health Check Server ──────────────────────────────────────────────────
 const PORT = process.env.PORT || 7860;

@@ -2,6 +2,7 @@
 // the only controls here are an emergency stop/start, plus read-only views.
 const db = require("./db");
 const jobsMode = require("./jobsMode");
+const notifyTarget = require("./notifyTarget");
 const { runOnce, statusSummary } = require("./index");
 const { AUTO_APPLY, DAILY_CAP, inApplyWindow } = require("./applyEngine");
 
@@ -35,11 +36,14 @@ function registerJobsCommands(bot) {
     try {
       const args = (ctx.message.text || "").trim().split(/\s+/).slice(1);
       const cmd = (args[0] || "status").toLowerCase();
+      // Any /jobs message auto-registers this chat for the 24h report.
+      notifyTarget.setChatId(ctx.chat && ctx.chat.id);
       const help =
         `*Jobs commands:*\n` +
         `/jobs status — pipeline state\n` +
         `/jobs queue — jobs queued for apply\n` +
         `/jobs applied — applications submitted\n` +
+        `/jobs notify — send the daily 24h report to this chat\n` +
         `/jobs stop — EMERGENCY stop\n` +
         `/jobs start — resume constant auto\n` +
         `/jobs scan — force one scan (prepares only, never submits out of auto rules)`;
@@ -62,6 +66,9 @@ function registerJobsCommands(bot) {
           ctx.reply("Scanning now (this prepares matches + queued applications; it respects dry-run/window/cap)…").catch(() => {});
           runOnce().then(() => ctx.reply("Scan complete.").catch(() => {})).catch(() => {});
           return;
+        case "notify":
+          notifyTarget.setChatId(ctx.chat && ctx.chat.id);
+          return ctx.reply("✅ This chat will receive the ForChi Jobs 24h report (jobs applied count) every day at 08:00 WAT.");
         default:
           return ctx.reply(help, { parse_mode: "Markdown" });
       }
