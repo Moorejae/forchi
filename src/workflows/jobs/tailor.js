@@ -33,7 +33,7 @@ REQUIREMENTS:
 HARD RULES:
 - Keep EVERY fact real. Never invent employers, titles, years, numbers, projects, or URLs. Only the profile + portfolio facts below may be used.
 - Plain text only: no markdown symbols, no hashtags, no tables, no bullets with asterisks or dashes. Use clean lines.
-- One page, concise.
+- ONE PAGE: keep it tight — summary max 2 sentences, skills 3-4 compact lines, each project max 2 short bullets, each experience entry max 2 short lines, certifications 1 line each. Shorten until it fits one US Letter page.
 
 REAL CANDIDATE DATA:
 ${realData}
@@ -49,7 +49,8 @@ Return JSON ONLY:
   try {
     const raw = await generate(prompt, { type: "object", maxTokens: 1500 });
     const p = JSON.parse(raw);
-    return (p.resumeText || "").trim();
+    // Strip URL schemes so links render as bare domains (matching the original resume).
+    return (p.resumeText || "").replace(/https?:\/\//g, "").trim();
   } catch (e) {
     console.warn("[Jobs] Tailor failed:", e.message);
     // Retry once with a conciseness constraint to stay under the token budget.

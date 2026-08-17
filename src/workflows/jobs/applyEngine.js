@@ -22,26 +22,98 @@ function inApplyWindow() {
   return h >= WINDOW[0] && h < WINDOW[1];
 }
 
-// Render a tailored resume PDF (pdfkit) if available; else fall back to the base resume.
+// Render a tailored resume to a styled PDF (Carlito fonts, US Letter) matching
+// the original resume's standard. Falls back to the base resume PDF.
+const FONT_DIR = process.env.FONT_DIR || path.join(process.cwd(), "data", "fonts");
+const F = {
+  regular: path.join(FONT_DIR, "Carlito-Regular.ttf"),
+  bold: path.join(FONT_DIR, "Carlito-Bold.ttf"),
+  italic: path.join(FONT_DIR, "Carlito-Italic.ttf"),
+  boldItalic: path.join(FONT_DIR, "Carlito-BoldItalic.ttf"),
+};
+
+const SECTION_TITLES = [
+  "professional summary", "summary", "key skills", "skills",
+  "technical projects & experience", "projects", "experience",
+  "certifications", "education", "certifications & education",
+  "key engineering projects", "technical projects",
+];
+
+function cleanLine(text) {
+  return String(text).replace(/https?:\/\//g, "").replace(/\s+/g, " ").trim();
+}
+
+function isSectionHeading(line) {
+  const t = cleanLine(line).toLowerCase().replace(/[^a-z& ]/g, " ").trim();
+  return SECTION_TITLES.some((s) => t === s || t.includes(s)) ||
+    /^[A-Z][A-Z0-9 &/()\-]{2,45}$/.test(cleanLine(line));
+}
+
+function isProjectHeader(line) {
+  const t = cleanLine(line);
+  if (t.length > 90) return false;
+  return /\b(19|20)\d{2}\b/.test(t) || /\|/.test(t) || /\(Live\)/i.test(t) || /[–—]/.test(t);
+}
+
 function getResumeBuffer(tailoredText) {
   try {
     const PDFDocument = require("pdfkit");
     if (tailoredText && tailoredText.length > 100) {
       const chunks = [];
       return new Promise((resolve) => {
-        const doc = new PDFDocument({ size: "A4", margin: 48 });
+        const doc = new PDFDocument({ size: "LETTER", margin: 48 });
         doc.on("data", (c) => chunks.push(c));
         doc.on("end", () => resolve(Buffer.concat(chunks)));
-        doc.fontSize(10);
-        for (const line of tailoredText.split("\n")) {
-          const t = line.trim();
-          if (!t) { doc.moveDown(0.4); continue; }
-          if (/^(SUMMARY|SKILLS|PROJECTS|EXPERIENCE|CERTIFICATIONS)$/i.test(t)) {
-            doc.moveDown(0.4).font("Helvetica-Bold").fontSize(12).text(t).font("Helvetica").fontSize(10);
-          } else {
-            doc.text(t);
+
+        doc.registerFont("Carlito-Regular", F.regular);
+        doc.registerFont("Carlito-Bold", F.bold);
+        doc.registerFont("Carlito-Italic", F.italic);
+        doc.registerFont("Carlito-BoldItalic", F.boldItalic);
+
+        const ACCENT = "#1F3864";
+        const GRAY = "#555555";
+        const DARK = "#1a1a1a";
+        const margin = 48;
+        const width = doc.page.width - margin * 2;
+
+        const lines = String(tailoredText).split("\n").map((l) => cleanLine(l)).filter(Boolean);
+
+        // ── Header: name / title / contact ──
+        const name = lines[0] || "Agu Victor Chiedozie";
+        const title = lines[1] || "";
+        const contact = lines[2] || "";
+        const bodyLines = lines.slice(3);
+
+        doc.font("Carlito-Bold").fontSize(18).fillColor(ACCENT).text(name.toUpperCase());
+        if (title) doc.moveDown(0.2).font("Carlito-Regular").fontSize(11.5).fillColor(DARK).text(title);
+        if (contact) doc.moveDown(0.2).font("Carlito-Regular").fontSize(8.5).fillColor(GRAY).text(contact);
+        doc.moveDown(0.5);
+        doc.moveTo(margin, doc.y).lineTo(margin + width, doc.y).lineWidth(1.3).strokeColor(ACCENT).stroke();
+        doc.moveDown(1);
+
+        // ── Sections ──
+        for (const line of bodyLines) {
+          if (isSectionHeading(line)) {
+            doc.moveDown(0.7);
+            doc.font("Carlito-Bold").fontSize(10.5).fillColor(ACCENT).text(line.toUpperCase());
+            doc.moveDown(0.1);
+            doc.moveTo(margin, doc.y).lineTo(margin + width, doc.y).lineWidth(0.6).strokeColor(ACCENT).opacity(0.6).stroke().opacity(1);
+            doc.moveDown(0.55);
+            continue;
           }
+          if (isProjectHeader(line)) {
+            doc.moveDown(0.4);
+            doc.font("Carlito-Bold").fontSize(10).fillColor(DARK).text(line);
+            doc.moveDown(0.12);
+            continue;
+          }
+          const bullet = /^[-•*]/.test(line);
+          const text = bullet ? line.replace(/^[-•*]\s*/, "") : line;
+          doc.font("Carlito-Regular").fontSize(9.5).fillColor(DARK);
+          doc.text(bullet ? `•  ${text}` : text, { lineGap: 1, paragraphGap: 2.5, indent: bullet ? 11 : 0 });
+          doc.moveDown(0.1);
         }
+
         doc.end();
       });
     }
