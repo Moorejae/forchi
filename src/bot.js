@@ -6,6 +6,7 @@ const { Telegraf } = require("telegraf");
 const { passesGate } = require("./router/gate");
 const { extractPostIntent } = require("./router/extractor");
 const { detectAutoModeToggle } = require("./router/autoModeToggle");
+const { detectJobsToggle } = require("./router/jobsToggle");
 const { chatReply } = require("./llm/chatChain");
 const socialWorkflow = require("./workflows/social/index");
 const { processVoiceMessage } = require("./voice/transcriber");
@@ -95,6 +96,20 @@ async function handleIncomingText(ctx, text) {
       toggle.enabled
         ? `Auto mode is now ${state} — I'll keep posting to Facebook & LinkedIn at 08:00, 12:00, 16:00, 20:00 and 00:00 UTC.`
         : `Auto mode is now ${state} — I'll stop scheduled posts. You can still send me a post anytime, or say "turn on auto mode" to resume.`
+    );
+  }
+
+  // Job-workflow toggle — ForChi starts/stops the jobs agent the same way:
+  // "turn on/off the job workflow" or "activate/deactivate the job scanner".
+  const jobsToggle = detectJobsToggle(text);
+  if (jobsToggle) {
+    jobsMode.setEnabled(jobsToggle.enabled);
+    const jState = jobsMode.isEnabled() ? "ON ✅" : "OFF ⛔";
+    console.log(`[JobsMode] User ${ctx.from?.id} set job workflow ${jobsToggle.enabled ? "ON" : "OFF"}`);
+    return ctx.reply(
+      jobsToggle.enabled
+        ? `Job workflow is now ${jState} — ForChi will scan and prepare applications for matching jobs (still respecting dry-run / apply window / daily cap).`
+        : `Job workflow is now ${jState} — ForChi will stop scanning jobs. Say "turn on the job workflow" to resume.`
     );
   }
 

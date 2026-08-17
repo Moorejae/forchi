@@ -37,6 +37,9 @@ tools/create_img_space.py
 !data/resume/*.pdf
 # Jobs runtime DB — local data, not source:
 data/jobs.db
+# Jobs runtime state (chat target, on/off) — ephemeral, not source:
+data/jobs_mode.json
+data/jobs_notify.json
 temp/*.png
 temp/*.jpg
 temp/*.jpeg
