@@ -22,27 +22,44 @@ async function runSafe() {
   }
 }
 
-// Daily (every 24h) Telegram report: number of jobs applied + totals.
-// Fires at 07:00 UTC = 08:00 WAT, and once shortly after boot if a chat is known.
+// Daily (every 24h) Telegram report: jobs applied + totals, well organized.
+// Fires at 19:00 UTC = 20:00 WAT (8pm Nigerian time), and once shortly after
+// boot if a chat is known.
 async function sendDailyReport(bot) {
   const chatId = notifyTarget.getChatId();
   if (!chatId || !bot) {
-    console.warn("[JobsScheduler] No report chat id set — skipping 24h report.");
+    console.warn("[JobsScheduler] No report chat id set — skipping daily report.");
     return;
   }
   try {
     const since = new Date(Date.now() - 86400000).toISOString();
     const last24 = await db.countAppliedSince(since);
     const s = await statusSummary();
-    const lines = [
-      `📋 *ForChi Jobs — 24h report*`,
-      `Applied in last 24h: *${last24}*`,
-      `Total applied: ${s.applied}`,
-      `Queued to apply: ${s.pendingApply}`,
-      `Total jobs seen: ${s.totalJobs}`,
+    const applied = await db.getApplied();
+    const dateStr = new Date().toLocaleString("en-GB", {
+      timeZone: "Africa/Lagos", weekday: "long", day: "2-digit", month: "short",
+      year: "numeric", hour: "2-digit", minute: "2-digit",
+    });
+    const parts = [
+      `📋 *ForChi Jobs — Daily Report*`,
+      `🗓 ${dateStr} (WAT)`,
+      `━━━━━━━━━━━━━━━━━━`,
+      `✅ Applied in last 24h: *${last24}*`,
+      `📊 Total applied: ${s.applied}`,
+      `⏳ Queued to apply: ${s.pendingApply}`,
+      `⏭ Skipped: ${(s.byStatus && s.byStatus.skipped) || 0}`,
+      `🔍 Total jobs seen: ${s.totalJobs}`,
+      `🛰 Mode: ${s.mode} · Cap: ${s.cap}/day`,
     ];
-    await bot.telegram.sendMessage(chatId, lines.join("\n"), { parse_mode: "Markdown" });
-    console.log("[JobsScheduler] 24h report sent to", chatId);
+    if (applied && applied.length) {
+      parts.push(`━━━━━━━━━━━━━━━━━━`);
+      parts.push(`*Recent applications:*`);
+      for (const a of applied.slice(0, 8)) {
+        parts.push(`✅ ${a.company} — ${a.title} (score ${a.match_score ?? "?"})`);
+      }
+    }
+    await bot.telegram.sendMessage(chatId, parts.join("\n"), { parse_mode: "Markdown" });
+    console.log("[JobsScheduler] daily report sent to", chatId);
   } catch (e) {
     console.warn("[JobsScheduler] daily report error:", e.message);
   }
@@ -64,8 +81,8 @@ function startJobsScheduler({ bot } = {}) {
     if (jobsMode.isEnabled()) runSafe();
   }, intervalMin * 60000);
 
-  // Daily (every-24h) report: 07:00 UTC = 08:00 WAT.
-  nodeCron.schedule("0 7 * * *", () => sendDailyReport(bot));
+  // Daily (every-24h) report: 19:00 UTC = 20:00 WAT (8pm Nigerian time).
+  nodeCron.schedule("0 19 * * *", () => sendDailyReport(bot));
 }
 
 module.exports = { startJobsScheduler, runSafe, sendDailyReport };
