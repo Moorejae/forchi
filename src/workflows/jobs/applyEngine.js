@@ -154,4 +154,4 @@ async function submitApplication(job, app) {
   }
 }
 
-module.exports = { submitApplication, AUTO_APPLY, DAILY_CAP, inApplyWindow };
+module.exports = { submitApplication, getResumeBuffer, AUTO_APPLY, DAILY_CAP, inApplyWindow };
