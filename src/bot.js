@@ -6,7 +6,8 @@ const { Telegraf } = require("telegraf");
 const { passesGate } = require("./router/gate");
 const { extractPostIntent } = require("./router/extractor");
 const { detectAutoModeToggle } = require("./router/autoModeToggle");
-const { detectJobsToggle } = require("./router/jobsToggle");
+const { detectJobsToggle, detectJobsReport } = require("./router/jobsToggle");
+const { buildDailyReportText } = require("./workflows/jobs/scheduler");
 const { chatReply } = require("./llm/chatChain");
 const socialWorkflow = require("./workflows/social/index");
 const { processVoiceMessage } = require("./voice/transcriber");
@@ -111,6 +112,17 @@ async function handleIncomingText(ctx, text) {
         ? `Job workflow is now ${jState} — ForChi will scan and prepare applications for matching jobs (still respecting dry-run / apply window / daily cap).`
         : `Job workflow is now ${jState} — ForChi will stop scanning jobs. Say "turn on the job workflow" to resume.`
     );
+  }
+
+  // On-demand jobs report — "show me the jobs report" / "what have you applied for?".
+  if (detectJobsReport(text)) {
+    console.log(`[JobsReport] User ${ctx.from?.id} requested the jobs report`);
+    return buildDailyReportText()
+      .then((report) => ctx.reply(report, { parse_mode: "Markdown" }))
+      .catch((err) => {
+        console.error("[JobsReport] error:", err.message);
+        return ctx.reply("Sorry, I couldn't pull the jobs report right now.");
+      });
   }
 
   // Exit 1: Layer 1 gate fails → chat (decoupled: instant ack, reply in background)

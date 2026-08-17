@@ -27,4 +27,18 @@ function detectJobsToggle(text) {
   return null;
 }
 
-module.exports = { detectJobsToggle };
+// Detect a request to SEE the jobs report / applied jobs (plain chat, e.g.
+// "show me the jobs report", "what jobs have you applied for?").
+function detectJobsReport(text) {
+  const t = String(text || "").trim();
+  if (t.length < 5) return false;
+  // Never treat on/off toggle commands as a report request.
+  if (/turn (on|off)|switch (on|off)|activate|deactivate|enable|disable/.test(t)) return false;
+  return /(?:jobs?|applications?)\s*(?:report|summary|applied|status|progress|today|so far)/i.test(t) ||
+    /report(?:\s*(?:on|of|for))?\s+(?:the\s+)?(?:jobs?|applications?)/i.test(t) ||
+    /how many (?:jobs?|applications?)/i.test(t) ||
+    /what (?:jobs?|applications?).*(?:applied|sent)/i.test(t) ||
+    /show me.*(?:jobs?|applications?)/i.test(t);
+}
+
+module.exports = { detectJobsToggle, detectJobsReport };
