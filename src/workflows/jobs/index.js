@@ -8,6 +8,20 @@ const { tailorResume } = require("./tailor");
 const { submitApplication, AUTO_APPLY, DAILY_CAP } = require("./applyEngine");
 
 const MAX_PER_RUN = Number(process.env.JOBS_MAX_PER_RUN || 25);
+// FRESHNESS GATE: never apply to a role older than this (default 14 days).
+// Newly-posted roles (24h–2 weeks) are the target; anything older is stale.
+const MAX_AGE_DAYS = Number(process.env.JOBS_MAX_AGE_DAYS || 14);
+
+// Age of a job in days, using the posting date when the source provides one,
+// else the date we first discovered it (created_at) as a proxy. Unknown → 0
+// (treated fresh — we can't prove it's stale).
+function jobAgeDays(job) {
+  const raw = job.posted_at || job.created_at;
+  if (!raw) return 0;
+  const t = new Date(raw).getTime();
+  if (Number.isNaN(t)) return 0;
+  return (Date.now() - t) / 86400000;
+}
 
 // Attempt submission for a prepared job. Returns 'applied' | 'prepared' | 'failed'.
 async function maybeSubmit(job, app) {
@@ -69,6 +83,15 @@ async function runOnce() {
   const newJobs = await db.getNewJobs(MAX_PER_RUN);
   const tally = { applied: 0, prepared: 0, skipped: 0, failed: 0 };
   for (const job of newJobs) {
+    // FRESHNESS GATE: skip stale postings (>MAX_AGE_DAYS old) BEFORE spending
+    // a Gemini scoring call. Newly posted roles (24h–2 weeks) are the target.
+    const ageDays = jobAgeDays(job);
+    if (ageDays > MAX_AGE_DAYS) {
+      await db.setJobStatus(job.id, "skipped");
+      tally.skipped++;
+      console.log(`[Jobs] skipped ${job.company} / ${job.title} — ${Math.round(ageDays)}d old (> ${MAX_AGE_DAYS}d)`);
+      continue;
+    }
     // HARD LOCATION RULE (backstop, enforced even if the model errs):
     // remote roles only — hybrid/onsite require explicit visa sponsorship.
     if (!isLocationAllowed(job)) {
@@ -96,6 +119,14 @@ async function runOnce() {
   const AUTO_SOURCES = ["greenhouse", "lever", "workable", "ashby"];
   const queued = (await db.getJobsByStatus("matched")).filter((j) => AUTO_SOURCES.includes(j.source));
   for (const job of queued.slice(0, MAX_PER_RUN)) {
+    // Freshness gate also applies to queued jobs — a queued role that has since
+    // aged past the window is dropped rather than applied to late.
+    if (jobAgeDays(job) > MAX_AGE_DAYS) {
+      await db.setJobStatus(job.id, "skipped");
+      tally.skipped++;
+      console.log(`[Jobs] dropped queued ${job.company} / ${job.title} — stale (> ${MAX_AGE_DAYS}d)`);
+      continue;
+    }
     const appRow = await db.getApplicationForJob(job.id);
     if (!appRow) continue;
     const app = {
@@ -123,4 +154,4 @@ async function statusSummary() {
   };
 }
 
-module.exports = { runOnce, statusSummary, maybeSubmit };
+module.exports = { runOnce, statusSummary, maybeSubmit, MAX_AGE_DAYS };

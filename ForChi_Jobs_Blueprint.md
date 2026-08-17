@@ -149,9 +149,15 @@ The scan went from 2 boards + 25 companies to **9 source channels** (~2,500 jobs
 - **Semi-auto ≠ auto.** Aggregator + LinkedIn jobs are scored and queued, shown in `/jobs queue` **with their apply URL + a "manual apply" marker**, but never auto-submitted (no trusted submitter for them). The retry loop only re-attempts auto-appliable sources, so manual jobs don't churn every scan.
 - ATS detection: if any feed listing points *directly* at a Greenhouse/Lever/Ashby/Workable posting URL, it's rewritten to that source and auto-applied by the existing engine (currently feeds link to their own pages, so this is a safety net for future feeds).
 
+### Recency (freshness gate) — NEW
+- **Scan cadence:** every **30 min** (`JOBS_SCAN_INTERVAL_MIN`, min 5) — catches newly-posted roles within ~30 min of posting.
+- **Hard freshness gate:** roles **> 14 days old are never applied to** (`JOBS_MAX_AGE_DAYS`, default 14). Enforced at code level in the pipeline *before* scoring (saves Gemini calls) and again on queued retries (a queued role that ages out is dropped).
+- Age = source `posted_at` when provided (Greenhouse `first_published`, Lever `createdAt`, Ashby `publishedAt`, RemoteOK `date`, Remotive `publication_date`, Jobicy `pubDate`, Arbeitnow `created_at`, Himalayas `pubDate`, LinkedIn card date); otherwise first-seen `created_at` is the proxy (unknown → treated fresh).
+- Goal: target **24h–2 week** postings; the `getNewJobs` query already orders newest-first, so fresh postings are scored/applied before older backlog.
+
 ### Cost/scale guardrails
 - Scans cap at ~40 LinkedIn cards + ~250 filtered aggregator jobs; `MAX_PER_RUN=25` scores per pass, so the backlog drains gradually and Gemini quota stays flat.
-- Daily report now shows a **source breakdown** (`🗂 Sources: greenhouse=… · linkedin=… · …`).
+- Daily report now shows a **source breakdown** (`🗂 Sources: greenhouse=… · linkedin=… · …`) and the freshness window (`Fresh: ≤14d`).
 - Hosting: Render free tier + existing keep-alive.
 - Storage: SQLite (existing `data/`).
 - Only deviation: if a specific target company's careers page requires JS rendering, add Playwright **only for that one page** (opt-in).

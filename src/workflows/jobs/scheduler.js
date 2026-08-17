@@ -2,7 +2,7 @@
 // Runs discovery+apply on an interval, plus a morning digest. A /jobs stop
 // safety kill-switch is handled in commands.js.
 const nodeCron = require("node-cron");
-const { runOnce, statusSummary } = require("./index");
+const { runOnce, statusSummary, MAX_AGE_DAYS } = require("./index");
 const db = require("./db");
 const jobsMode = require("./jobsMode");
 const notifyTarget = require("./notifyTarget");
@@ -41,7 +41,7 @@ async function buildDailyReportText() {
     `⏳ Queued to apply: ${s.pendingApply}`,
     `⏭ Skipped: ${(s.byStatus && s.byStatus.skipped) || 0}`,
     `🔍 Total jobs seen: ${s.totalJobs}`,
-    `🛰 Mode: ${s.mode} · Cap: ${s.cap}/day`,
+    `🛰 Mode: ${s.mode} · Cap: ${s.cap}/day · Fresh: ≤${MAX_AGE_DAYS}d`,
   ];
   if (s.bySource && Object.keys(s.bySource).length) {
     const src = Object.entries(s.bySource)

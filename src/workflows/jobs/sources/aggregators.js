@@ -39,7 +39,7 @@ function detectAts(url) {
   return null;
 }
 
-function normalize({ source, refId, company, title, url, location, salary, description, tags }) {
+function normalize({ source, refId, company, title, url, location, salary, description, tags, postedAt }) {
   const ats = detectAts(url);
   return {
     source: (ats && ats.source) || source,
@@ -51,7 +51,7 @@ function normalize({ source, refId, company, title, url, location, salary, descr
     location: location || "Remote",
     salary: salary || null,
     description: stripHtml(description).slice(0, 12000),
-    postedAt: null,
+    postedAt: postedAt || null,
     tags: Array.isArray(tags) ? tags.join(" ") : (tags || ""),
   };
 }
@@ -80,6 +80,7 @@ async function fetchRemotive() {
       salary: j.salary || null,
       description: `${j.description || ""} ${tags}`,
       tags: (j.tags || []),
+      postedAt: j.publication_date || null,
     }));
   }
   return out;
@@ -111,6 +112,7 @@ async function fetchJobicy() {
       salary: j.salaryMin && j.salaryMax ? `${j.salaryCurrency || "$"}${j.salaryMin}-${j.salaryMax}` : null,
       description: j.jobExcerpt || j.jobDescription || "",
       tags,
+      postedAt: j.pubDate || null,
     }));
   }
   return out;
@@ -140,6 +142,7 @@ async function fetchArbeitnow() {
       salary: null,
       description: j.description || `${tags}`,
       tags: j.tags || [],
+      postedAt: j.created_at ? new Date(j.created_at * 1000).toISOString() : null,
     }));
   }
   return out;
@@ -172,6 +175,7 @@ async function fetchHimalayas() {
       salary,
       description: j.description || j.excerpt || "",
       tags,
+      postedAt: j.pubDate || null,
     }));
   }
   return out;
