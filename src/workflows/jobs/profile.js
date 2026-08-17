@@ -27,8 +27,15 @@ const PROFILE = {
     web3: ["Aptos MoveVM", "Move smart contracts", "non-custodial escrow design"],
   },
   // The agent hunts for these kinds of roles (locked in the blueprint).
+  // As a Cloud & AI Systems Engineer, the user is also qualified for AI
+  // INTEGRATION and AI AUTOMATION roles (wiring LLMs into products, building
+  // agent pipelines, trigger-based automation) — those are exactly what ForChi
+  // itself is.
   targetRoles: [
     "AI / LLM Engineer",
+    "AI Integration Engineer",
+    "AI Automation Engineer",
+    "AI Solutions Engineer",
     "Cloud / DevOps Engineer",
     "Automation Engineer",
     "Backend Developer (Node.js / Python)",

@@ -43,7 +43,7 @@ RULES:
 - LOCATION HARD RULE: the candidate only wants REMOTE roles. If the role is hybrid or onsite, only set apply=true when the posting explicitly offers visa / work-authorization / relocation sponsorship (look for "visa sponsorship", "sponsorship available", "work authorization sponsorship", "relocation support"). Otherwise set apply=false with reason mentioning "not remote / no visa sponsorship".
 - PREFERRED REGIONS: Poland, Europe, Australia, New Zealand, North America, South America, Israel. Roles in these regions (or fully remote) are strongly preferred; roles elsewhere are lower priority.
 - Job descriptions may be written in languages other than English — that is fine, evaluate them normally.
-- Remote/cloud/AI/automation/backend roles should score well given his profile.
+- Remote/cloud/AI/LLM/AI-integration/AI-automation/automation/backend roles should score well given his profile. AI INTEGRATION and AI AUTOMATION roles (integrating LLMs into products, building agent pipelines, workflow/trigger-based automation, prompt/function-calling orchestration) are squarely in scope — his real projects (ForChi, CloudVoid, Flamchi/Odonata) are exactly this.
 - missing_skills must be honest and specific.
 
 Return JSON ONLY, no commentary:

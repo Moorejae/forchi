@@ -171,7 +171,7 @@ The scan went from 2 boards + 25 companies to **9 source channels** (~2,500 jobs
 ## 8. Decisions locked (2026-08-16)
 - [x] Base profile = `Agu_Victor_Chiedozie_Resum.pdf` (Cloud & AI Systems Engineer). Identity: aguchiedoxie@gmail.com / +234 816 280 2162 / linkedin.com/in/aguchiedoxie / github.com/Moorejae.
 - [x] Grounding corpus = ForChi + Flamchi (V61 Odonata) + CLAY + CloudVoid + Footchristo blueprints and real numbers.
-- [x] Target roles: AI/LLM Engineer, Cloud/DevOps Engineer, Automation Engineer, Freelance contracts.
+- [x] Target roles: AI/LLM Engineer, **AI Integration Engineer, AI Automation Engineer, AI Solutions Engineer** (as a Cloud & AI Systems Engineer he also fits AI-integration/automation roles — wiring LLMs into products, agent pipelines, trigger-based automation, exactly what ForChi is), Cloud/DevOps Engineer, Automation Engineer, Backend Developer (Node.js/Python). Freelance contracts out of scope.
 - [x] Apply mode: CONSTANT FULL-AUTO for trusted ATS (Greenhouse / Lever / Workable / Ashby); no manual trigger; never apply twice; stay awake.
 - [x] LinkedIn: discovery only. Freelance platforms: out of scope for v1.
 - [x] Voice: natural conversational (non-poetic), modeled on the resume summary + how the user talks.

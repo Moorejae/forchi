@@ -15,6 +15,7 @@ const { stripHtml } = require("./ats");
 // A job is kept if its title OR tags contain any of these.
 const KEEP = [
   "ai", "llm", "ml engineer", "machine learning", "mlops", "aiops",
+  "ai integration", "ai automation", "ai solutions", "integration engineer", "solutions engineer",
   "cloud", "devops", "backend", "full stack", "fullstack",
   "automation", "python", "node", "sre", "platform engineer",
   "infrastructure", "data engineer", "software engineer", "software developer",

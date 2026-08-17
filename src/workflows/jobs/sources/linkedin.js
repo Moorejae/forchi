@@ -14,6 +14,9 @@ const { searchWeb } = require("../../../llm/webSearch");
 
 const KEYWORDS = [
   "AI Engineer",
+  "AI Integration Engineer",
+  "AI Automation Engineer",
+  "AI Solutions Engineer",
   "Machine Learning Engineer",
   "Cloud Engineer",
   "DevOps Engineer",
