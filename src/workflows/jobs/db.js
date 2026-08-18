@@ -5,7 +5,12 @@
 const path = require("path");
 const fs = require("fs");
 
-const USE_PG = !!(process.env.JOBS_DATABASE_URL || "").trim();
+// Accept both spellings (JOBS_DATABASE_URL, and the misspelled JOBS_DATABASE_UR
+// the user initially used) — but the value MUST be a postgresql:// DSN.
+function getDbUrl() {
+  return (process.env.JOBS_DATABASE_URL || process.env.JOBS_DATABASE_UR || "").trim();
+}
+const USE_PG = !!getDbUrl();
 const dbFile = process.env.JOBS_DB_PATH || "./data/jobs.db";
 
 let dbInstance = null;
@@ -105,9 +110,16 @@ async function openSqlite() {
 }
 
 async function openPostgres() {
+  const dsn = getDbUrl();
+  if (!/^postgres(ql)?:\/\//.test(dsn)) {
+    throw new Error(
+      "JOBS_DATABASE_URL is not a Postgres connection string. Expected postgresql://user:password@host:5432/db. " +
+      `Got: ${dsn.slice(0, 40)}... (If this is a Neon 'https://...apirest.../rest/v1' URL, copy the CONNECTION STRING tab in the Neon dashboard instead — it includes your DB password.)`
+    );
+  }
   const { Client } = require("pg");
   const client = new Client({
-    connectionString: process.env.JOBS_DATABASE_URL,
+    connectionString: dsn,
     ssl: { rejectUnauthorized: false },
     statement_timeout: 30000,
   });
