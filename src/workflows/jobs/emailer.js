@@ -35,61 +35,72 @@ async function sendMatchEmail(job, { coverLetter, resumeTailored }) {
     console.warn("[JobsEmail] SMTP_PASS not configured — skipping email (semi-auto match queued only).");
     return false;
   }
-  try {
-    const transporter = nodemailer.createTransport({
-      host: SMTP_HOST,
-      port: SMTP_PORT,
-      secure: SMTP_PORT === 465,
-      family: 4, // force IPv4 — Render free tier has no IPv6 (ENETUNREACH otherwise)
-      auth: { user: SMTP_USER, pass: SMTP_PASS },
-      connectionTimeout: 20000,
-      greetingTimeout: 20000,
-      socketTimeout: 40000,
-    });
-
-    let resumePdf = null;
-    if (resumeTailored && resumeTailored.length > 100) {
-      try { resumePdf = await getResumeBuffer(resumeTailored); }
-      catch (e) { console.warn("[JobsEmail] resume PDF failed:", e.message); }
-    }
-
-    const subject = `🎯 Job match: ${job.company} — ${job.title}`;
-    const text = [
-      "A new job matched your profile and is ready to apply:",
-      "",
-      `🏢 Company: ${job.company}`,
-      `💼 Role: ${job.title}`,
-      `📍 Location: ${job.location || "Remote"}`,
-      `🗓 Posted: ${job.postedAt || "n/a"}`,
-      `🔗 Apply here: ${job.url}`,
-      "",
-      "────────────────────────────",
-      "TAILORED COVER LETTER",
-      "────────────────────────────",
-      "",
-      coverLetter || "(none)",
-      "",
-      resumePdf ? "Your tailored resume is attached as a PDF." : "Resume PDF unavailable.",
-      "",
-      "— ForChi Jobs",
-    ].join("\n");
-
-    await transporter.sendMail({
-      from: `"ForChi Jobs" <${SMTP_USER}>`,
-      to: TO,
-      subject,
-      text,
-      attachments: resumePdf
-        ? [{ filename: `Agu_Victor_Resume_${safeName(job.company)}.pdf`, content: resumePdf }]
-        : [],
-    });
-
-    console.log(`[JobsEmail] ✅ emailed ${job.company} / ${job.title} -> ${TO}`);
-    return true;
-  } catch (e) {
-    console.warn(`[JobsEmail] ❌ failed ${job.company} / ${job.title}: ${e.message}`);
-    return false;
+  // Try multiple SMTP ports in order — Render free tier blocks some outbound
+  // ports (587 timed out), so fall through to 465 and 2525.
+  const candidates = [
+    { host: SMTP_HOST, port: 587, secure: false },
+    { host: SMTP_HOST, port: 465, secure: true },
+    { host: SMTP_HOST, port: 2525, secure: false },
+  ];
+  let resumePdf = null;
+  if (resumeTailored && resumeTailored.length > 100) {
+    try { resumePdf = await getResumeBuffer(resumeTailored); }
+    catch (e) { console.warn("[JobsEmail] resume PDF failed:", e.message); }
   }
+
+  const subject = `🎯 Job match: ${job.company} — ${job.title}`;
+  const text = [
+    "A new job matched your profile and is ready to apply:",
+    "",
+    `🏢 Company: ${job.company}`,
+    `💼 Role: ${job.title}`,
+    `📍 Location: ${job.location || "Remote"}`,
+    `🗓 Posted: ${job.postedAt || "n/a"}`,
+    `🔗 Apply here: ${job.url}`,
+    "",
+    "────────────────────────────",
+    "TAILORED COVER LETTER",
+    "────────────────────────────",
+    "",
+    coverLetter || "(none)",
+    "",
+    resumePdf ? "Your tailored resume is attached as a PDF." : "Resume PDF unavailable.",
+    "",
+    "— ForChi Jobs",
+  ].join("\n");
+  const mail = {
+    from: `"ForChi Jobs" <${SMTP_USER}>`,
+    to: TO,
+    subject,
+    text,
+    attachments: resumePdf
+      ? [{ filename: `Agu_Victor_Resume_${safeName(job.company)}.pdf`, content: resumePdf }]
+      : [],
+  };
+
+  let lastErr = null;
+  for (const c of candidates) {
+    try {
+      const transporter = nodemailer.createTransport({
+        host: c.host,
+        port: c.port,
+        secure: c.secure,
+        family: 4, // force IPv4 — Render free tier has no IPv6 (ENETUNREACH otherwise)
+        auth: { user: SMTP_USER, pass: SMTP_PASS },
+        connectionTimeout: 15000,
+        greetingTimeout: 15000,
+        socketTimeout: 30000,
+      });
+      await transporter.sendMail(mail);
+      console.log(`[JobsEmail] ✅ emailed ${job.company} / ${job.title} -> ${TO} (port ${c.port})`);
+      return true;
+    } catch (e) {
+      lastErr = e;
+      console.warn(`[JobsEmail] port ${c.port} failed (${e.message.slice(0, 80)}) — trying next…`);
+    }
+  }
+  console.warn(`[JobsEmail] ❌ failed ${job.company} / ${job.title}: ${lastErr ? lastErr.message : "no candidates"}`);
+  return false;
 }
 
 module.exports = { sendMatchEmail, configured };
