@@ -1,7 +1,7 @@
 // Jobs pipeline orchestrator: discover → match → research → write → tailor → apply.
 const { discoverJobs } = require("./sources/index");
 const db = require("./db");
-const { scoreJob, isLocationAllowed } = require("./matcher");
+const { scoreJob, isLocationAllowed, isIndianJob } = require("./matcher");
 const { researchCompany } = require("./researcher");
 const { writeApplication } = require("./writer");
 const { tailorResume } = require("./tailor");
@@ -123,6 +123,13 @@ async function runOnce() {
       console.log(`[Jobs] skipped ${job.company} / ${job.title} — ${Math.round(ageDays)}d old (> ${MAX_AGE_DAYS}d)`);
       continue;
     }
+    // REGION BLOCK (user rule): India-located roles are skipped before scoring.
+    if (isIndianJob(job)) {
+      await db.setJobStatus(job.id, "skipped");
+      tally.skipped++;
+      console.log(`[Jobs] blocked ${job.company} / ${job.title} — India region`);
+      continue;
+    }
     // HARD LOCATION RULE (backstop, enforced even if the model errs):
     // remote roles only — hybrid/onsite require explicit visa sponsorship.
     if (!isLocationAllowed(job)) {
@@ -157,6 +164,13 @@ async function runOnce() {
       await db.setJobStatus(job.id, "skipped");
       tally.skipped++;
       console.log(`[Jobs] dropped queued ${job.company} / ${job.title} — stale (> ${MAX_AGE_DAYS}d)`);
+      continue;
+    }
+    // Region block also cleans up any already-matched India roles.
+    if (isIndianJob(job)) {
+      await db.setJobStatus(job.id, "skipped");
+      tally.skipped++;
+      console.log(`[Jobs] blocked queued ${job.company} / ${job.title} — India region`);
       continue;
     }
     if (AUTO_SOURCES.includes(job.source)) {

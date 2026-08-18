@@ -20,6 +20,31 @@ function isLocationAllowed(job) {
   return !(negBefore || negAfter);
 }
 
+// Region block (user rule): skip India-located roles — low pay, rough work
+// environment. Matches on location ("Remote (Bangalore, India)", city names)
+// plus well-known Indian staffing/outsourcing firms.
+const BLOCK_INDIA = (process.env.JOBS_BLOCK_INDIA || "true").toLowerCase() !== "false";
+const INDIA_CITIES = [
+  "bengaluru", "bangalore", "mumbai", "bombay", "delhi", "new delhi", "hyderabad",
+  "pune", "chennai", "madras", "gurgaon", "noida", "kolkata", "calcutta", "ahmedabad",
+  "kochi", "jaipur", "indore", "chandigarh", "nagpur", "lucknow", "surat", "thiruvananthapuram",
+];
+const INDIA_COMPANIES = [
+  "tata consultancy", " tcs ", "infosys", "wipro", "hcl ", "cognizant", "tech mahindra",
+  "persistent systems", "mphasis", "ltimindtree", "ust global", "zensar", "hexaware",
+  "coforge", "cyient", "tata", "accenture india", "capgemini india",
+];
+
+function isIndianJob(job) {
+  if (!BLOCK_INDIA) return false;
+  const loc = (job.location || "").toLowerCase();
+  const comp = (job.company || "").toLowerCase();
+  if (/\bindia\b/.test(loc)) return true;
+  if (INDIA_CITIES.some((c) => new RegExp(`\\b${c}\\b`).test(loc))) return true;
+  if (INDIA_COMPANIES.some((c) => comp.includes(c.trim()))) return true;
+  return false;
+}
+
 function scoreJob(job) {
   const prompt = `You are a rigorous job-match evaluator. Decide whether this candidate should apply to a job.
 
@@ -71,4 +96,4 @@ Return JSON ONLY, no commentary:
     });
 }
 
-module.exports = { scoreJob, isLocationAllowed, MIN_SCORE };
+module.exports = { scoreJob, isLocationAllowed, isIndianJob, BLOCK_INDIA, MIN_SCORE };
