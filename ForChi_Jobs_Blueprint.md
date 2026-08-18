@@ -166,8 +166,9 @@ The scan went from 2 boards + 25 companies to **9 source channels** (~2,500 jobs
 ### v3.2 — SEMI-AUTO EMAILS (one email per manual-apply job) (2026-08-18)
 - Every **semi-auto match** (LinkedIn + Remotive/Jobicy/Arbeitnow/Himalayas/RemoteOK/WWR — no trusted submitter) now sends **one email per job** to `EMAIL_TO` (default `yonkkalu@gmail.com`) containing: the **apply link**, the **tailored cover letter** (in the body), and the **tailored resume PDF** (attachment). The user opens the link, taps Apply, and has the letter + resume ready — no digging through the Telegram queue.
 - **Never double-emails**: a `emails` table (`job_id` UNIQUE) records each send.
-- Emailer: `src/workflows/jobs/emailer.js` (nodemailer). Config via env: `SMTP_HOST` (smtp.gmail.com), `SMTP_PORT` (587), `SMTP_USER`, `SMTP_PASS` (**Gmail App Password** — requires 2-Step Verification), `EMAIL_TO`.
+- Emailer: `src/workflows/jobs/emailer.js`. **Send paths:** (1) **Resend HTTPS API** (`RESEND_API_KEY`, free at resend.com) — the reliable path because **Render free tier blocks ALL outbound SMTP** (587/465/2525 timeout; verified). (2) SMTP fallback (Gmail app password) for hosts that allow it. Config: `EMAIL_TO` (agumoorewe@gmail.com), `RESEND_API_KEY`, `EMAIL_FROM`, `SMTP_USER`/`SMTP_PASS`.
 - `/jobs status` + daily report now show `Emailed: N`.
+- **One-per-job, never twice:** `emails` table (job_id UNIQUE) + `hasSimilarHandled` (same company+title across sources).
 
 ### v3.1 — more auto-apply targets + persistence (2026-08-18)
 - **+25 remote-friendly ATS companies** (Zapier, HashiCorp, DigitalOcean, Render, Vercel, PostHog, Sentry, Sourcegraph, Mux, Airtable, Figma, Webflow, Mixpanel, Duolingo, Zendesk, Instacart, Perplexity, Cohere, Mistral AI, Databricks, CrowdStrike, Discord, Fivetran, Intercom, Quora) → **48 total**, so the auto-apply path has real mid-level AI/cloud/backend targets.
