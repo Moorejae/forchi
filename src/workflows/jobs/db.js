@@ -1,21 +1,16 @@
-// Jobs workflow persistence — SQLite tables for discovered jobs and applications.
-// Separate file (data/jobs.db) so it never locks the social DB.
-const sqlite3 = require("sqlite3");
-const { open } = require("sqlite");
+// Jobs workflow persistence — SQLite (default, data/jobs.db) OR PostgreSQL
+// (persistent across Render redeploys) when JOBS_DATABASE_URL is set.
+// Postgres is the durable option for a free-tier Render host whose disk resets
+// on every deploy; SQLite stays as the zero-config fallback.
 const path = require("path");
 const fs = require("fs");
 
+const USE_PG = !!(process.env.JOBS_DATABASE_URL || "").trim();
 const dbFile = process.env.JOBS_DB_PATH || "./data/jobs.db";
 
 let dbInstance = null;
 
-async function getJobsDB() {
-  if (dbInstance) return dbInstance;
-  const dir = path.dirname(path.resolve(dbFile));
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-
-  dbInstance = await open({ filename: path.resolve(dbFile), driver: sqlite3.Database });
-  await dbInstance.exec(`
+const SQLITE_DDL = `
     CREATE TABLE IF NOT EXISTS jobs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       source TEXT NOT NULL,
@@ -29,17 +24,16 @@ async function getJobsDB() {
       description TEXT,
       posted_at TEXT,
       match_score INTEGER,
-      status TEXT NOT NULL DEFAULT 'new',   -- new | matched | applied | skipped | archived | failed
+      status TEXT NOT NULL DEFAULT 'new',
       created_at TEXT NOT NULL,
       updated_at TEXT
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_unique ON jobs (source, company, title, url);
-
     CREATE TABLE IF NOT EXISTS applications (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      job_id INTEGER NOT NULL UNIQUE,        -- HARD RULE: never apply to the same job twice
+      job_id INTEGER NOT NULL UNIQUE,
       cover_letter TEXT,
-      answers TEXT,                           -- JSON array of screening-question answers
+      answers TEXT,
       resume_tailored TEXT,
       company_research TEXT,
       submitted INTEGER DEFAULT 0,
@@ -49,8 +43,89 @@ async function getJobsDB() {
     CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs (status);
     CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs (created_at);
     CREATE INDEX IF NOT EXISTS idx_app_applied ON applications (applied_at);
-  `);
-  console.log("[JobsDB] Initialized at", path.resolve(dbFile));
+`;
+
+const PG_DDL = `
+    CREATE TABLE IF NOT EXISTS jobs (
+      id BIGSERIAL PRIMARY KEY,
+      source TEXT NOT NULL,
+      ref_id TEXT,
+      board TEXT,
+      company TEXT NOT NULL,
+      title TEXT NOT NULL,
+      url TEXT NOT NULL,
+      location TEXT,
+      salary TEXT,
+      description TEXT,
+      posted_at TEXT,
+      match_score INTEGER,
+      status TEXT NOT NULL DEFAULT 'new',
+      created_at TEXT NOT NULL,
+      updated_at TEXT
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_unique ON jobs (source, company, title, url);
+    CREATE TABLE IF NOT EXISTS applications (
+      id BIGSERIAL PRIMARY KEY,
+      job_id BIGINT NOT NULL UNIQUE,
+      cover_letter TEXT,
+      answers TEXT,
+      resume_tailored TEXT,
+      company_research TEXT,
+      submitted INTEGER DEFAULT 0,
+      response TEXT,
+      applied_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs (status);
+    CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs (created_at);
+    CREATE INDEX IF NOT EXISTS idx_app_applied ON applications (applied_at);
+`;
+
+// Convert SQLite ? placeholders to Postgres $1, $2, ...
+function pgParams(sql, params) {
+  let i = 0;
+  const text = String(sql).replace(/\?/g, () => `$${++i}`);
+  return { text, values: params || [] };
+}
+
+async function openSqlite() {
+  const sqlite3 = require("sqlite3");
+  const { open } = require("sqlite");
+  const dir = path.dirname(path.resolve(dbFile));
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const db = await open({ filename: path.resolve(dbFile), driver: sqlite3.Database });
+  await db.exec(SQLITE_DDL);
+  console.log("[JobsDB] SQLite initialized at", path.resolve(dbFile));
+  return {
+    run: (...a) => db.run(...a),
+    get: (...a) => db.get(...a),
+    all: (...a) => db.all(...a),
+    exec: (...a) => db.exec(...a),
+    close: () => db.close(),
+  };
+}
+
+async function openPostgres() {
+  const { Client } = require("pg");
+  const client = new Client({
+    connectionString: process.env.JOBS_DATABASE_URL,
+    ssl: { rejectUnauthorized: false },
+    statement_timeout: 30000,
+  });
+  await client.connect();
+  await client.query(PG_DDL);
+  console.log("[JobsDB] PostgreSQL initialized (persistent across deploys).");
+  return {
+    async run(sql, params) { const r = await client.query(pgParams(sql, params)); return { changes: r.rowCount || 0 }; },
+    async get(sql, params) { const r = await client.query(pgParams(sql, params)); return r.rows[0]; },
+    async all(sql, params) { const r = await client.query(pgParams(sql, params)); return r.rows; },
+    async exec(sql) { await client.query(sql); },
+    async close() { await client.end(); },
+  };
+}
+
+async function getJobsDB() {
+  if (dbInstance) return dbInstance;
+  dbInstance = USE_PG ? await openPostgres() : await openSqlite();
   return dbInstance;
 }
 
@@ -61,14 +136,18 @@ async function getJobsDB() {
 async function insertJobs(list) {
   const db = await getJobsDB();
   const now = new Date().toISOString();
+  const insert = USE_PG
+    ? `INSERT INTO jobs (source, ref_id, board, company, title, url, location, salary, description, posted_at, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)
+       ON CONFLICT (source, company, title, url) DO NOTHING`
+    : `INSERT OR IGNORE INTO jobs (source, ref_id, board, company, title, url, location, salary, description, posted_at, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)`;
   let added = 0;
   for (const j of list || []) {
     if (!j || !j.company || !j.title || !j.url) continue;
     const seen = await db.get(`SELECT 1 FROM jobs WHERE url = ?`, [j.url]);
     if (seen) continue;
-    const r = await db.run(
-      `INSERT OR IGNORE INTO jobs (source, ref_id, board, company, title, url, location, salary, description, posted_at, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)`,
+    const r = await db.run(insert,
       [j.source || "?", j.refId || null, j.board || null, j.company, j.title, j.url, j.location || null,
        j.salary || null, j.description || null, j.posted_at || null, now]
     );
@@ -145,7 +224,7 @@ async function countAppliedToday() {
     `SELECT COUNT(*) AS c FROM applications WHERE submitted = 1 AND applied_at >= ?`,
     [start.toISOString()]
   );
-  return row ? row.c : 0;
+  return row ? Number(row.c) : 0;
 }
 
 async function countAppliedSince(iso) {
@@ -154,7 +233,7 @@ async function countAppliedSince(iso) {
     `SELECT COUNT(*) AS c FROM applications WHERE submitted = 1 AND applied_at >= ?`,
     [iso]
   );
-  return row ? row.c : 0;
+  return row ? Number(row.c) : 0;
 }
 
 async function getApplied() {
@@ -174,9 +253,9 @@ async function getStats() {
   const applied = await db.get(`SELECT COUNT(*) AS c FROM applications WHERE submitted = 1`);
   const pending = await db.get(`SELECT COUNT(*) AS c FROM jobs WHERE status = 'matched'`);
   return {
-    totalJobs: total ? total.c : 0,
-    applied: applied ? applied.c : 0,
-    pendingApply: pending ? pending.c : 0,
+    totalJobs: total ? Number(total.c) : 0,
+    applied: applied ? Number(applied.c) : 0,
+    pendingApply: pending ? Number(pending.c) : 0,
     byStatus: Object.fromEntries(byStatus.map((r) => [r.status, r.c])),
     bySource: Object.fromEntries(bySource.map((r) => [r.source, r.c])),
   };

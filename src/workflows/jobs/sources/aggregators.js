@@ -192,4 +192,4 @@ async function fetchAggregators() {
   return out;
 }
 
-module.exports = { fetchAggregators, fetchRemotive, fetchJobicy, fetchArbeitnow, fetchHimalayas, detectAts };
+module.exports = { fetchAggregators, fetchRemotive, fetchJobicy, fetchArbeitnow, fetchHimalayas, detectAts, passesFilter };

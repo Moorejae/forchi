@@ -28,6 +28,36 @@ const TARGET_COMPANIES = [
   { name: "Elastic", ats: "lever", slug: "elastic" },
   { name: "Pinterest", ats: "lever", slug: "pinterest" },
   { name: "Wealthsimple", ats: "lever", slug: "wealthsimple" },
+
+  // ── v3.1: remote-friendly AI/cloud/backend targets (more mid-level matches
+  // for auto-apply; wrong slugs are skipped best-effort, never fatal) ──
+  // Greenhouse
+  { name: "Zapier", ats: "greenhouse", slug: "zapier" },
+  { name: "HashiCorp", ats: "greenhouse", slug: "hashicorp" },
+  { name: "DigitalOcean", ats: "greenhouse", slug: "digitalocean" },
+  { name: "Render", ats: "greenhouse", slug: "render" },
+  { name: "Vercel", ats: "greenhouse", slug: "vercel" },
+  { name: "PostHog", ats: "greenhouse", slug: "posthog" },
+  { name: "Sentry", ats: "greenhouse", slug: "sentry" },
+  { name: "Sourcegraph", ats: "greenhouse", slug: "sourcegraph" },
+  { name: "Mux", ats: "greenhouse", slug: "mux" },
+  { name: "Airtable", ats: "greenhouse", slug: "airtable" },
+  { name: "Figma", ats: "greenhouse", slug: "figma" },
+  { name: "Webflow", ats: "greenhouse", slug: "webflow" },
+  { name: "Mixpanel", ats: "greenhouse", slug: "mixpanel" },
+  { name: "Duolingo", ats: "greenhouse", slug: "duolingo" },
+  { name: "Zendesk", ats: "greenhouse", slug: "zendesk" },
+  { name: "Instacart", ats: "greenhouse", slug: "instacart" },
+  { name: "Perplexity", ats: "greenhouse", slug: "perplexity" },
+  { name: "Cohere", ats: "greenhouse", slug: "cohere" },
+  { name: "Mistral AI", ats: "greenhouse", slug: "mistral" },
+  { name: "Databricks", ats: "greenhouse", slug: "databricks" },
+  { name: "CrowdStrike", ats: "greenhouse", slug: "crowdstrike" },
+  { name: "Discord", ats: "greenhouse", slug: "discord" },
+  // Lever
+  { name: "Fivetran", ats: "lever", slug: "fivetran" },
+  { name: "Intercom", ats: "lever", slug: "intercom" },
+  { name: "Quora", ats: "lever", slug: "quora" },
 ];
 
 // Env override: JSON array, e.g. JOBS_COMPANIES='[{"name":"X","ats":"greenhouse","slug":"x"}]'

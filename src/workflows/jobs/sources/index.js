@@ -2,7 +2,7 @@
 const { getTargetCompanies } = require("./companies");
 const { fetchCompanyBoard } = require("./ats");
 const { fetchRemoteOK, fetchWeWorkRemotely } = require("./remote");
-const { fetchAggregators } = require("./aggregators");
+const { fetchAggregators, passesFilter } = require("./aggregators");
 const { fetchLinkedInJobs } = require("./linkedin");
 
 const CONCURRENCY = 6;
@@ -32,8 +32,12 @@ async function discoverJobs() {
   const boardTasks = companies.map((c) => async () => {
     try {
       const jobs = await fetchCompanyBoard(c);
-      if (!jobs.length) logs.push(`[Jobs] ${c.ats}:${c.slug} -> 0 jobs`);
-      return jobs;
+      // KEYWORD PRE-FILTER on board jobs too: only AI/cloud/backend/automation
+      // roles enter the pipeline — keeps auto-apply focused and the queue clean.
+      const kept = jobs.filter((j) => passesFilter(j.title, ""));
+      if (jobs.length) logs.push(`[Jobs] ${c.ats}:${c.slug} -> ${kept.length}/${jobs.length} kept`);
+      else logs.push(`[Jobs] ${c.ats}:${c.slug} -> 0 jobs`);
+      return kept;
     } catch (e) {
       logs.push(`[Jobs] ${c.ats}:${c.slug} skipped (${e.message})`);
       return [];
