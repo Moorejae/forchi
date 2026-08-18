@@ -5,24 +5,53 @@
 //   - the tailored resume (PDF attachment)
 // The user opens the link, taps apply, and has the letter + resume ready.
 //
+// SEND PATHS (in order):
+//   1. RESEND (HTTPS API, port 443 — works on Render, which BLOCKS outbound
+//      SMTP 587/465/2525). Requires RESEND_API_KEY (free at resend.com).
+//   2. SMTP fallback (Gmail app password via SMTP_PASS) — works on hosts that
+//      allow outbound SMTP; tried on ports 587 → 465 → 2525.
+//
 // Config (env):
-//   EMAIL_TO        default yonkkalu@gmail.com
-//   SMTP_HOST       default smtp.gmail.com
-//   SMTP_PORT       default 587
-//   SMTP_USER       default EMAIL_TO
-//   SMTP_PASS       Gmail App Password (2FA required) — required to send.
+//   EMAIL_TO         recipient, default agumoorewe@gmail.com
+//   RESEND_API_KEY   Resend API key (preferred — HTTPS)
+//   EMAIL_FROM       Resend from address (default uses Resend's onboarding@resend.dev)
+//   SMTP_USER/PASS   Gmail SMTP fallback
 const nodemailer = require("nodemailer");
 const { getResumeBuffer } = require("./applyEngine");
 
 const TO = process.env.EMAIL_TO || "agumoorewe@gmail.com";
 const SMTP_HOST = process.env.SMTP_HOST || "smtp.gmail.com";
-const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
 const SMTP_USER = process.env.SMTP_USER || TO;
 // Gmail app passwords are 4 groups of 4 with spaces — strip them.
 const SMTP_PASS = (process.env.SMTP_PASS || "").replace(/\s+/g, "");
+const RESEND_KEY = (process.env.RESEND_API_KEY || "").trim();
+const FROM = process.env.EMAIL_FROM || "ForChi Jobs <onboarding@resend.dev>";
 
 function configured() {
-  return !!(SMTP_PASS && SMTP_HOST && SMTP_USER);
+  return !!(RESEND_KEY || (SMTP_PASS && SMTP_HOST && SMTP_USER));
+}
+
+// Resend HTTPS API (port 443 — the only reliable outbound path on Render).
+async function sendViaResend({ to, subject, text, resumePdf, company }) {
+  if (!RESEND_KEY) return false;
+  const body = {
+    from: FROM,
+    to: [to],
+    subject,
+    text,
+  };
+  if (resumePdf) {
+    body.attachments = [{ filename: `Agu_Victor_Resume_${safeName(company)}.pdf`, content: resumePdf.toString("base64") }];
+  }
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(30000),
+  });
+  if (res.ok) { console.log(`[JobsEmail] ✅ sent via Resend (${res.status})`); return true; }
+  console.warn(`[JobsEmail] Resend failed (${res.status}): ${(await res.text()).slice(0, 160)}`);
+  return false;
 }
 
 function safeName(s) {
@@ -78,6 +107,10 @@ async function sendMatchEmail(job, { coverLetter, resumeTailored }) {
       : [],
   };
 
+  // 1) Resend (HTTPS — the reliable path on Render).
+  if (await sendViaResend({ to: TO, subject, text, resumePdf, company: job.company })) return true;
+
+  // 2) SMTP fallback (587 → 465 → 2525).
   let lastErr = null;
   for (const c of candidates) {
     try {
