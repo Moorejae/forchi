@@ -179,6 +179,15 @@ The scan went from 2 boards + 25 companies to **9 source channels** (~2,500 jobs
 - Storage: SQLite (existing `data/`).
 - Only deviation: if a specific target company's careers page requires JS rendering, add Playwright **only for that one page** (opt-in).
 
+### v3.2 — LinkedIn non-Easy-Apply AUTO-APPLY + apply caps + resume PROJECTS restore (2026-08-18)
+- **LinkedIn jobs that also live on a company ATS board are now AUTO-APPLIED**, not emailed. For each new LinkedIn job (`upgradeToAts` in `sources/linkedin.js`), the bot web-searches the company's Greenhouse/Lever/Ashby/Workable board (`"company" site:…`), then:
+  1. **Strict company guard** — the ATS board slug must fully contain the company slug or vice versa (e.g. `northflank.com` ↔ `Northflank`, `unison` ↔ `Unison Group`). Deliberately **no fuzzy prefix matching** — `AlgorithmX` must never match the unrelated `algoritmi` board.
+  2. **Title-verified resolution** — the board's official public API (Greenhouse `boards-api`, Lever `postings`, Ashby `posting-api`, Workable `widget/accounts`) is queried and the posting whose title scores ≥0.6 overlap is chosen, so we apply to the **exact role**, never a random opening at the company.
+  3. **Last resort** — a directly-surfaced posting URL is trusted only if no board API responded.
+  Verified live: 4/15 searched LinkedIn jobs upgraded per scan to a real, title-matching ATS posting; false positives (staffing-agency boards, empty boards) correctly rejected.
+- **Apply rate capped at ~10 per 30-min scan** (`JOBS_APPLY_PER_RUN`, default 10) matching the user's explicit request; `JOBS_DAILY_CAP` raised to 300 so the per-scan budget governs. Existing pacing (`JOBS_APPLY_GAP_MS`, default 120 s between submissions) + apply window 07–19 UTC unchanged.
+- **Resume PROJECTS section restored** to the original `PROJECT NAME / ROLE | YEARS | URL / - bullet` layout (the EXPERIENCE section keeps the mirror-JD-language template).
+
 ---
 
 ## 8. Build status (ALL DONE — live)
