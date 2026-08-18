@@ -80,7 +80,9 @@ async function maybeSubmit(job, app) {
 async function prepareAndSubmit(job) {
   const research = await researchCompany(job.company, job.title);
   const app = await writeApplication({ job, companyResearch: research });
-  const tailored = await tailorResume(job);
+  // Pass the research so the resume's EXPERIENCE section can relate each real
+  // build to THIS company's vision (proof the JD was read).
+  const tailored = await tailorResume(job, research);
   await db.storeApplication({
     jobId: job.id,
     coverLetter: app.coverLetter,

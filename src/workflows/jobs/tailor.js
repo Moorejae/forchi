@@ -5,7 +5,7 @@ const { PROFILE } = require("./profile");
 const { PORTFOLIO } = require("./portfolio");
 const { detectLanguage, translateText } = require("./lang");
 
-async function tailorResume(job) {
+async function tailorResume(job, companyResearch) {
   const lang = detectLanguage(job.description || "");  const realData = JSON.stringify({
     profile: {
       name: PROFILE.name,
@@ -18,7 +18,13 @@ async function tailorResume(job) {
       linkedin: PROFILE.linkedin,
       github: PROFILE.github,
     },
+    // REAL work history (from the base resume) — never invent more.
+    experience: PROFILE.experience.map((e) => ({
+      role: e.role, company: e.company, years: e.years, bullets: e.bullets,
+    })),
     portfolio: PORTFOLIO.map((p) => ({ project: p.project, role: p.role, years: p.years, url: p.url, facts: p.facts })),
+    // Company research — used ONLY to relate experience to THIS company's vision.
+    companyResearch: companyResearch || null,
   }, null, 1);
 
   const prompt = `Rewrite this candidate's resume so it fits THIS specific job posting. The employer wants someone who understands the ROLE — the job description explains exactly what that means — so every section must be tailored to it.
@@ -28,7 +34,7 @@ REQUIREMENTS:
 1. PROFESSIONAL SUMMARY — make it PRECISE and DIRECT, in the candidate's own style (short, confident, few sentences), but adapted to THIS job and company. Lead with the specific value this role needs. Do NOT use vague filler.
 2. SKILLS — list ONLY the skills relevant to THIS job. Drop anything irrelevant. Order by relevance to the JD's keywords.
 3. PROJECTS — keep only the 1-3 most relevant projects, and rephrase their bullets to mirror THIS job's language and technology. (Prefer projects with live URLs: CloudVoid at https://cloudvoid.online and Myzelva at https://myzelva.com — include their URLs.)
-4. EXPERIENCE — tailor it to reflect what the candidate actually DID, and ALSO how he can apply the same level of expertise to THIS company. Frame each bullet so the employer can picture him doing the same for them.
+4. EXPERIENCE — THIS IS THE DIFFERENTIATOR. List the candidate's REAL work history from the "experience" data (company/role/years/bullets — never invent any). For EACH entry, after the real facts, add ONE short clause showing how that same build maps to THIS company's vision/needs (from companyResearch + the JD) — e.g. "same approach I'd bring to your {X} vision". This proves to HR that the job description was read and the candidate genuinely understands the company. Do NOT invent employers or roles — only relate the real experience to the company.
 5. CERTIFICATIONS — ALWAYS include this section at the bottom, using the candidate's real certifications listed below. Never omit it.
 
 HARD RULES:
