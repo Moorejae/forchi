@@ -8,7 +8,9 @@ const { tailorResume } = require("./tailor");
 const { submitApplication, AUTO_APPLY, DAILY_CAP } = require("./applyEngine");
 const { sendMatchEmail } = require("./emailer");
 
-const MAX_PER_RUN = Number(process.env.JOBS_MAX_PER_RUN || 25);
+const MAX_PER_RUN = Number(process.env.JOBS_MAX_PER_RUN || 40);
+// Cap how many match-emails go out per scan (Gmail pacing + resume PDF cost).
+const EMAIL_CAP_PER_RUN = Number(process.env.JOBS_EMAIL_CAP_PER_RUN || 10);
 // FRESHNESS GATE: never apply to a role older than this (default 14 days).
 // Newly-posted roles (24h–2 weeks) are the target; anything older is stale.
 const MAX_AGE_DAYS = Number(process.env.JOBS_MAX_AGE_DAYS || 14);
@@ -17,23 +19,25 @@ const AUTO_SOURCES = ["greenhouse", "lever", "workable", "ashby"];
 
 // Semi-auto matches (no trusted submitter) get emailed — one email per job
 // (link + cover letter + tailored resume PDF) for manual tap-through apply.
+// Returns true if an email was sent.
 async function maybeEmailMatch(job) {
-  if (AUTO_SOURCES.includes(job.source)) return; // these auto-apply instead
-  if (await db.hasEmailSent(job.id)) return; // never double-email this row
+  if (AUTO_SOURCES.includes(job.source)) return false; // these auto-apply instead
+  if (await db.hasEmailSent(job.id)) return false; // never double-email this row
   // Cross-source guard: if the SAME company+title was already emailed or
   // applied to via another source, don't email it again.
   if (await db.hasSimilarHandled(job.company, job.title)) {
     await db.markEmailSent(job.id);
     console.log(`[Jobs] dedup: already handled ${job.company} / ${job.title} — skipping email`);
-    return;
+    return false;
   }
   const app = await db.getApplicationForJob(job.id);
-  if (!app) return;
+  if (!app) return false;
   const ok = await sendMatchEmail(job, {
     coverLetter: app.cover_letter,
     resumeTailored: app.resume_tailored,
   });
   if (ok) await db.markEmailSent(job.id);
+  return ok;
 }
 
 // Age of a job in days, using the posting date when the source provides one,
@@ -141,11 +145,12 @@ async function runOnce() {
     if (r === "prepared") await maybeEmailMatch(job);
   }
 
-  // 3. Retry already-prepared (matched) jobs when the window/cap opens up.
-  //    Only AUTO-APPLIABLE sources are retried; semi-auto sources are emailed
-  //    once at match time (maybeEmailMatch) and stay queued as a manual list.
-  const queued = (await db.getJobsByStatus("matched")).filter((j) => AUTO_SOURCES.includes(j.source));
-  for (const job of queued.slice(0, MAX_PER_RUN)) {
+  // 3. Retry already-prepared (matched) jobs: AUTO sources get re-submitted
+  //    when the window/cap opens; SEMI-AUTO sources get emailed (covers both
+  //    brand-new matches and any that were matched before email was enabled).
+  const queued = await db.getJobsByStatus("matched");
+  let emailsThisRun = 0;
+  for (const job of queued.slice(0, MAX_PER_RUN * 2)) {
     // Freshness gate also applies to queued jobs — a queued role that has since
     // aged past the window is dropped rather than applied to late.
     if (jobAgeDays(job) > MAX_AGE_DAYS) {
@@ -154,20 +159,25 @@ async function runOnce() {
       console.log(`[Jobs] dropped queued ${job.company} / ${job.title} — stale (> ${MAX_AGE_DAYS}d)`);
       continue;
     }
-    const appRow = await db.getApplicationForJob(job.id);
-    if (!appRow) continue;
-    const app = {
-      coverLetter: appRow.cover_letter,
-      answers: appRow.answers ? JSON.parse(appRow.answers) : [],
-      resumeTailored: appRow.resume_tailored,
-    };
-    const r = await maybeSubmit(job, app);
-    if (r === "applied") { await db.setJobStatus(job.id, "applied"); tally.applied++; }
-    else if (r === "prepared") { await db.setJobStatus(job.id, "matched"); tally.prepared++; }
-    else { tally.failed++; }
+    if (AUTO_SOURCES.includes(job.source)) {
+      const appRow = await db.getApplicationForJob(job.id);
+      if (!appRow) continue;
+      const app = {
+        coverLetter: appRow.cover_letter,
+        answers: appRow.answers ? JSON.parse(appRow.answers) : [],
+        resumeTailored: appRow.resume_tailored,
+      };
+      const r = await maybeSubmit(job, app);
+      if (r === "applied") { await db.setJobStatus(job.id, "applied"); tally.applied++; }
+      else if (r === "prepared") { await db.setJobStatus(job.id, "matched"); tally.prepared++; }
+      else { tally.failed++; }
+    } else if (emailsThisRun < EMAIL_CAP_PER_RUN) {
+      const sent = await maybeEmailMatch(job);
+      if (sent) { emailsThisRun++; tally.emailed = (tally.emailed || 0) + 1; }
+    }
   }
 
-  console.log(`[Jobs] Run complete: applied=${tally.applied} queued=${tally.prepared} skipped=${tally.skipped} failed=${tally.failed}`);
+  console.log(`[Jobs] Run complete: applied=${tally.applied} emailed=${tally.emailed || 0} queued=${tally.prepared} skipped=${tally.skipped} failed=${tally.failed}`);
   return { added, ...tally };
 }
 

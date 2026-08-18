@@ -11,13 +11,16 @@
 //      never auto-submitted — shown in /jobs queue with its URL for manual apply).
 const { stripHtml } = require("./ats");
 
-// Keywords matching the profile's target roles + core skills.
-// A job is kept if its title OR tags contain any of these.
+// BOOLEAN OR search recipe (the user's LinkedIn terms, applied everywhere):
+// contractor / freelance / global remote / AI / AI integration / Automation,
+// plus the profile's target roles/skills. A job is kept if its title OR tags
+// contain ANY of these.
 const KEEP = [
-  "ai", "llm", "ml engineer", "machine learning", "mlops", "aiops",
+  "ai", "llm", "ml engineer", "machine learning", "mlops", "aiops", "agentic",
   "ai integration", "ai automation", "ai solutions", "integration engineer", "solutions engineer",
   "cloud", "devops", "backend", "full stack", "fullstack",
   "automation", "python", "node", "sre", "platform engineer",
+  "contractor", "freelance", "contract", "global remote",
   "infrastructure", "data engineer", "software engineer", "software developer",
   "aws", "azure", "gcp", "kubernetes", "docker", "terraform",
 ];
@@ -25,6 +28,17 @@ const KEEP = [
 function passesFilter(title, tagsText) {
   const t = `${title || ""} ${tagsText || ""}`.toLowerCase();
   return KEEP.some((k) => t.includes(k));
+}
+
+// Recency pre-filter: only keep jobs posted within MAX_AGE_DAYS (default 14),
+// when the feed provides a posted date. Unknown age → kept (created_at proxy
+// in the pipeline catches staleness later). Keeps the queue fresh + fast.
+const MAX_AGE_DAYS = Number(process.env.JOBS_MAX_AGE_DAYS || 14);
+function isFreshEnough(postedAt) {
+  if (!postedAt) return true;
+  const t = new Date(postedAt).getTime();
+  if (Number.isNaN(t)) return true;
+  return (Date.now() - t) / 86400000 <= MAX_AGE_DAYS;
 }
 
 // If the job URL is a direct supported-ATS posting, return its ATS identity so
@@ -70,6 +84,7 @@ async function fetchRemotive() {
     const title = j.title || "";
     const tags = [j.category || "", ...(j.tags || [])].join(" ");
     if (!passesFilter(title, tags)) continue;
+    if (!isFreshEnough(j.publication_date)) continue; // drop >14d old
     out.push(normalize({
       source: "remotive",
       refId: String(j.id || ""),
@@ -102,6 +117,7 @@ async function fetchJobicy() {
     const title = j.jobTitle || "";
     const tags = `${j.jobIndustry || ""} ${j.jobType || ""} ${j.jobLevel || ""}`;
     if (!passesFilter(title, tags)) continue;
+    if (!isFreshEnough(j.pubDate)) continue; // drop >14d old
     out.push(normalize({
       source: "jobicy",
       refId: String(j.id || ""),
@@ -132,6 +148,7 @@ async function fetchArbeitnow() {
     const title = j.title || "";
     const tags = (j.tags || []).join(" ");
     if (!passesFilter(title, tags)) continue;
+    if (!isFreshEnough(j.created_at ? new Date(j.created_at * 1000).toISOString() : null)) continue; // drop >14d old
     out.push(normalize({
       source: "arbeitnow",
       refId: j.slug || "",
@@ -162,6 +179,7 @@ async function fetchHimalayas() {
     const title = j.title || "";
     const tags = (Array.isArray(j.categories) ? j.categories.join(" ") : "") + " " + (Array.isArray(j.seniority) ? j.seniority.join(" ") : "");
     if (!passesFilter(title, tags)) continue;
+    if (!isFreshEnough(j.pubDate)) continue; // drop >14d old
     const salary = j.minSalary && j.maxSalary
       ? `${j.currency || "$"}${j.minSalary}-${j.maxSalary} ${j.salaryPeriod || "annual"}`
       : (j.minSalary ? `${j.currency || "$"}${j.minSalary} ${j.salaryPeriod || "annual"}` : null);
@@ -192,4 +210,4 @@ async function fetchAggregators() {
   return out;
 }
 
-module.exports = { fetchAggregators, fetchRemotive, fetchJobicy, fetchArbeitnow, fetchHimalayas, detectAts, passesFilter };
+module.exports = { fetchAggregators, fetchRemotive, fetchJobicy, fetchArbeitnow, fetchHimalayas, detectAts, passesFilter, isFreshEnough };

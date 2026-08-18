@@ -14,11 +14,12 @@
 const nodemailer = require("nodemailer");
 const { getResumeBuffer } = require("./applyEngine");
 
-const TO = process.env.EMAIL_TO || "yonkkalu@gmail.com";
+const TO = process.env.EMAIL_TO || "agumoorewe@gmail.com";
 const SMTP_HOST = process.env.SMTP_HOST || "smtp.gmail.com";
 const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
 const SMTP_USER = process.env.SMTP_USER || TO;
-const SMTP_PASS = process.env.SMTP_PASS || "";
+// Gmail app passwords are 4 groups of 4 with spaces — strip them.
+const SMTP_PASS = (process.env.SMTP_PASS || "").replace(/\s+/g, "");
 
 function configured() {
   return !!(SMTP_PASS && SMTP_HOST && SMTP_USER);

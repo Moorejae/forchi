@@ -2,7 +2,7 @@
 const { getTargetCompanies } = require("./companies");
 const { fetchCompanyBoard } = require("./ats");
 const { fetchRemoteOK, fetchWeWorkRemotely } = require("./remote");
-const { fetchAggregators, passesFilter } = require("./aggregators");
+const { fetchAggregators, passesFilter, isFreshEnough } = require("./aggregators");
 const { fetchLinkedInJobs } = require("./linkedin");
 
 const CONCURRENCY = 6;
@@ -45,8 +45,22 @@ async function discoverJobs() {
   });
 
   const remoteTasks = [
-    async () => { try { return await fetchRemoteOK(); } catch (e) { logs.push(`[Jobs] remoteok skipped (${e.message})`); return []; } },
-    async () => { try { return await fetchWeWorkRemotely(); } catch (e) { logs.push(`[Jobs] weworkremotely skipped (${e.message})`); return []; } },
+    async () => {
+      try {
+        const jobs = await fetchRemoteOK();
+        const kept = jobs.filter((j) => passesFilter(j.title, j.tags || "") && isFreshEnough(j.postedAt));
+        if (jobs.length) logs.push(`[Jobs] remoteok -> ${kept.length}/${jobs.length} kept`);
+        return kept;
+      } catch (e) { logs.push(`[Jobs] remoteok skipped (${e.message})`); return []; }
+    },
+    async () => {
+      try {
+        const jobs = await fetchWeWorkRemotely();
+        const kept = jobs.filter((j) => passesFilter(j.title, ""));
+        if (jobs.length) logs.push(`[Jobs] weworkremotely -> ${kept.length}/${jobs.length} kept`);
+        return kept;
+      } catch (e) { logs.push(`[Jobs] weworkremotely skipped (${e.message})`); return []; }
+    },
     async () => { try { return await fetchAggregators(); } catch (e) { logs.push(`[Jobs] aggregators skipped (${e.message})`); return []; } },
     async () => { try { return await fetchLinkedInJobs(); } catch (e) { logs.push(`[Jobs] linkedin skipped (${e.message})`); return []; } },
   ];
