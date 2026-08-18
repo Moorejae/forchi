@@ -136,7 +136,7 @@ The scan went from 2 boards + 25 companies to **9 source channels** (~2,500 jobs
 
 | Source | Type | Auto-apply? |
 |---|---|---|
-| Greenhouse / Lever (23 named cos: OpenAI, Anthropic, Stripe, Netflix…) | ATS boards | ✅ auto |
+| Greenhouse / Lever (**48** named cos: OpenAI, Anthropic, Stripe, Zapier, HashiCorp, DigitalOcean, Render, Vercel, PostHog, Perplexity, Cohere, Mistral…) | ATS boards | ✅ auto |
 | Workable / Ashby (ATS-resolved from feeds) | ATS boards | ✅ auto |
 | RemoteOK | remote board | manual (semi-auto) |
 | WeWorkRemotely | remote board | manual (semi-auto) |
@@ -162,6 +162,12 @@ The scan went from 2 boards + 25 companies to **9 source channels** (~2,500 jobs
 ### Cost/scale guardrails
 - Scans cap at ~40 LinkedIn cards + ~250 filtered aggregator jobs; `MAX_PER_RUN=25` scores per pass, so the backlog drains gradually and Gemini quota stays flat.
 - Daily report now shows a **source breakdown** (`🗂 Sources: greenhouse=… · linkedin=… · …`) and the freshness window (`Fresh: ≤14d`).
+
+### v3.1 — more auto-apply targets + persistence (2026-08-18)
+- **+25 remote-friendly ATS companies** (Zapier, HashiCorp, DigitalOcean, Render, Vercel, PostHog, Sentry, Sourcegraph, Mux, Airtable, Figma, Webflow, Mixpanel, Duolingo, Zendesk, Instacart, Perplexity, Cohere, Mistral AI, Databricks, CrowdStrike, Discord, Fivetran, Intercom, Quora) → **48 total**, so the auto-apply path has real mid-level AI/cloud/backend targets.
+- **Keyword pre-filter now also applies to company-board jobs** — only AI/cloud/backend/automation roles enter the pipeline, so auto-apply focuses on matches and the queue stays clean.
+- **Postgres-ready persistence** (`JOBS_DATABASE_URL`): `db.js` now supports PostgreSQL (persistent across Render redeploys; the free-tier disk resets on every deploy), with SQLite as the zero-config default. To enable: create a free Neon/Supabase Postgres → set `JOBS_DATABASE_URL` (via `tools/set_env_var.js`) → redeploy. Bigint-safe counts included.
+- **Daily-report chat id survives redeploys**: persisted to Render env var `JOBS_NOTIFY_CHAT_ID` (bot self-writes via Render API using `RENDER_API_KEY`/`RENDER_SERVICE_ID` added to its env).
 - Hosting: Render free tier + existing keep-alive.
 - Storage: SQLite (existing `data/`).
 - Only deviation: if a specific target company's careers page requires JS rendering, add Playwright **only for that one page** (opt-in).
