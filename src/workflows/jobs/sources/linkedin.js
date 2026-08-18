@@ -6,10 +6,12 @@
 // company, location, and posted date. We then fetch a few posting pages for
 // their description so the matcher can score properly.
 //
-// LinkedIn jobs have NO auto-apply path (Easy Apply is not scriptable), so they
-// are "semi-auto": discovered, scored, queued, and shown in /jobs queue with
-// their apply URL for manual submission. The apply engine already treats any
-// unknown source this way.
+// AUTO-APPLY UPGRADE: LinkedIn hides the external ATS apply URL from the public
+// page (Easy Apply is not scriptable), BUT many LinkedIn postings also live on
+// the company's Greenhouse/Lever/Ashby/Workable board. For each new LinkedIn
+// job we web-search for that ATS posting; if found, the job is REWRITTEN to the
+// ATS source and auto-applied by the existing engine. Only jobs with no
+// discoverable ATS posting (incl. Easy Apply) stay semi-auto (email).
 const { searchWeb } = require("../../../llm/webSearch");
 
 // User's LinkedIn search recipe: contractor / freelance / global remote / AI /
@@ -24,6 +26,7 @@ const KEYWORDS = [
 ];
 const MAX_CARDS = 40; // cards parsed per scan
 const MAX_DESC_FETCH = 10; // posting pages to fetch for description
+const ATS_SEARCH_MAX = 15; // jobs per scan we web-search for an ATS posting
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 
@@ -202,9 +205,176 @@ async function fetchLinkedInJobs() {
     description: c.description || descMap.get(c.id) || "",
     postedAt: c.postedAt,
   }));
+
+  // AUTO-APPLY UPGRADE: web-search each job for its ATS posting (Greenhouse /
+  // Lever / Ashby / Workable). If found, rewrite it to that source so the
+  // existing engine auto-applies; otherwise it stays semi-auto (email).
+  await upgradeToAts(jobs);
+
   const withDesc = jobs.filter((j) => j.description).length;
-  console.log(`[Jobs] LinkedIn: ${jobs.length} jobs (${withDesc} with description).`);
+  const auto = jobs.filter((j) => j.source !== "linkedin").length;
+  console.log(`[Jobs] LinkedIn: ${jobs.length} jobs (${withDesc} desc) — ${auto} upgraded to auto-apply ATS.`);
   return jobs;
 }
 
-module.exports = { fetchLinkedInJobs };
+// Search for the same job on a supported ATS board and, if found, rewrite the
+// job to that source (auto-apply). Bounded per scan to keep the search cost sane.
+async function upgradeToAts(jobs) {
+  let upgraded = 0;
+  for (const j of jobs) {
+    if (upgraded >= ATS_SEARCH_MAX) break;
+    if (!j.company || !j.title) continue;
+    try {
+      const ats = await discoverAtsPosting(j.company, j.title);
+      if (ats) {
+        j.source = ats.source;
+        j.board = ats.board;
+        j.refId = ats.refId;
+        j.url = ats.url;
+        upgraded++;
+        console.log(`[Jobs] LinkedIn→ATS ${j.company} / ${j.title} → ${ats.source} (auto-apply)`);
+      }
+    } catch (e) {
+      console.warn(`[Jobs] LinkedIn→ATS search failed ${j.company}: ${e.message.slice(0, 60)}`);
+    }
+  }
+  return upgraded;
+}
+
+// ── ATS board specs: public (keyless) job-list APIs for each supported ATS ──
+const ATS_SPECS = {
+  greenhouse: {
+    host: "boards.greenhouse.io",
+    api: (b) => `https://boards-api.greenhouse.io/v1/boards/${b}/jobs`,
+    jobs: (r) => (r && r.jobs) || [],
+    pick: (j) => ({ title: j.title, url: j.absolute_url, refId: String(j.id) }),
+  },
+  lever: {
+    host: "jobs.lever.co",
+    api: (b) => `https://api.lever.co/v0/postings/${b}?mode=json`,
+    jobs: (r) => (Array.isArray(r) ? r : []),
+    pick: (j) => ({ title: (j.text || "").split(" at ")[0].trim(), url: j.hostedUrl, refId: j.id }),
+  },
+  ashby: {
+    host: "jobs.ashbyhq.com",
+    api: (b) => `https://api.ashbyhq.com/posting-api/job-board/${b}`,
+    jobs: (r) => (r && r.jobs) || [],
+    pick: (j) => ({ title: j.title, url: j.jobUrl, refId: j.id }),
+  },
+  workable: {
+    host: "apply.workable.com",
+    api: (b) => `https://apply.workable.com/api/v1/widget/accounts/${b}`,
+    jobs: (r) => (r && r.jobs) || [],
+    pick: (j) => ({ title: j.title, url: j.url, refId: j.shortcode || (j.url || "").split("/").pop() }),
+  },
+};
+
+const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+// Tolerant ATS URL parse — the web search snippets TRUNCATE URLs (280-char
+// snippets cut them mid-way), so we must accept board-only URLs too. Returns
+// { source, board, refId?, url } or null. refId is optional (board homepage).
+function parseAtsUrl(raw) {
+  try {
+    const u = String(raw).split(/[?#]/)[0];
+    let m;
+    if ((m = u.match(/boards\.greenhouse\.io\/([^/]+)(?:\/jobs(?:\/(\d+))?)?/)))
+      return { source: "greenhouse", board: decodeURIComponent(m[1]), refId: m[2], url: raw };
+    if ((m = u.match(/jobs\.lever\.co\/([^/]+)(?:\/([a-zA-Z0-9-]+))?/)))
+      return { source: "lever", board: decodeURIComponent(m[1]), refId: m[2], url: raw };
+    if ((m = u.match(/jobs\.ashbyhq\.com\/([^/]+)(?:\/([a-zA-Z0-9-]+))?/)))
+      return { source: "ashby", board: decodeURIComponent(m[1]), refId: m[2], url: raw };
+    if ((m = u.match(/apply\.workable\.com\/([^/]+)(?:\/(?:j\/)?([a-zA-Z0-9-]+))?/)))
+      return { source: "workable", board: decodeURIComponent(m[1]), refId: m[2], url: raw };
+  } catch (e) { /* bad url */ }
+  return null;
+}
+
+// Overlap score (0..1) between two normalized titles. 0.6 threshold keeps
+// "AI Engineer" ↔ "Applied AI Engineer" (match) but rejects "AI Engineer" ↔
+// "Software Engineer" (only "engineer" shared).
+function titleScore(a, b) {
+  const A = norm(a).split(/\s+/).filter((w) => w.length > 1);
+  const B = norm(b).split(/\s+/).filter((w) => w.length > 1);
+  if (!A.length || !B.length) return 0;
+  const shared = A.filter((w) => B.includes(w)).length;
+  return shared / Math.max(A.length, B.length);
+}
+
+function fetchJson(url, timeoutMs = 8000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("timeout")), timeoutMs);
+    const lib = url.startsWith("https") ? require("https") : require("http");
+    lib.get(url, { headers: { "User-Agent": "Mozilla/5.0" } }, (res) => {
+      let d = "";
+      res.on("data", (c) => (d += c));
+      res.on("end", () => { clearTimeout(timer); try { resolve(JSON.parse(d)); } catch (e) { reject(new Error("bad json")); } });
+    }).on("error", (e) => { clearTimeout(timer); reject(e); });
+  });
+}
+
+// Fetch the board's job list and return the best title-matching posting.
+// Returns null if the API responded but no posting matches the title. THROWS
+// if the API is unreachable (caller treats that as "can't resolve").
+async function resolveBoardPosting(ats, title) {
+  const spec = ATS_SPECS[ats.source];
+  const r = await fetchJson(spec.api(ats.board));
+  let best = null, bestScore = 0;
+  for (const j of spec.jobs(r)) {
+    const p = spec.pick(j);
+    if (!p || !p.title || !p.url) continue;
+    const s = titleScore(title, p.title);
+    if (s > bestScore) { bestScore = s; best = p; }
+  }
+  if (best && bestScore >= 0.6) {
+    return { source: ats.source, board: ats.board, refId: best.refId, url: best.url };
+  }
+  return null;
+}
+
+// Web-search for the company's ATS board, then resolve the exact posting from
+// that board's official API by title. Returns { source, board, refId, url } or
+// null. STRICT: the ATS board slug must match the company, so we never
+// auto-apply to a different company's posting that happens to share a title.
+async function discoverAtsPosting(company, title) {
+  const q = `"${company}" site:jobs.ashbyhq.com OR site:boards.greenhouse.io OR site:jobs.lever.co OR site:apply.workable.com`;
+  let text = "";
+  try { const r = await searchWeb(q, 6000); text = (r && r.results) || ""; } catch (e) { return null; }
+  // Looser extraction: snippets truncate URLs, so grab any http(s) token.
+  const urls = [...text.matchAll(/https?:\/\/[^\s)]+/g)].map((m) => m[0]);
+  const cNorm = norm(company);
+  const boards = [];
+  for (const u of urls) {
+    const ats = parseAtsUrl(u);
+    if (!ats || !ATS_SPECS[ats.source]) continue;
+    const bNorm = norm(ats.board);
+    // STRICT company guard: only accept when the board slug and the company
+    // fully contain each other (e.g. "Northflank" ↔ "northflank.com", "Unison
+    // Group" ↔ "unison"). We deliberately do NOT use fuzzy/prefix matching —
+    // e.g. "AlgorithmX" must never match the unrelated board "algoritmi".
+    if (!(bNorm.includes(cNorm) || cNorm.includes(bNorm))) continue;
+    if (!boards.some((b) => b.source === ats.source && norm(b.board) === bNorm)) boards.push(ats);
+  }
+  if (!boards.length) return null;
+
+  // Primary: ask the board's official API which posting matches THIS title
+  // (never auto-apply to a different role at the same company just because a
+  // snippet surfaced its board).
+  let anyApiOk = false;
+  let lastResort = null;
+  for (const b of boards) {
+    let post = null;
+    try {
+      post = await resolveBoardPosting(b, title);
+      anyApiOk = true; // API responded (post may be null if title didn't match)
+    } catch (e) { /* board API unreachable — remember a direct URL to fall back to */ }
+    if (post) return post;
+    if (b.refId && !lastResort) lastResort = { source: b.source, board: b.board, refId: b.refId, url: b.url };
+  }
+  // Last resort: only when no board API responded do we trust a direct posting
+  // URL that the search surfaced (an unreachable API shouldn't block auto-apply).
+  if (!anyApiOk && lastResort) return lastResort;
+  return null;
+}
+
+module.exports = { fetchLinkedInJobs, discoverAtsPosting };

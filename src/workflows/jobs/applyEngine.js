@@ -10,7 +10,9 @@ const RESUME_PATH =
   process.env.RESUME_PATH || path.join(process.cwd(), "data", "resume", "Agu_Victor_Chiedozie_Resum.pdf");
 
 const AUTO_APPLY = (process.env.JOBS_AUTO_APPLY || "false").toLowerCase() === "true";
-const DAILY_CAP = Number(process.env.JOBS_DAILY_CAP || 10);
+// Daily cap is high so the per-scan budget (JOBS_APPLY_PER_RUN, ~10 per 30 min)
+// is the real limiter. User rule: ~10 applications per 30-minute cycle.
+const DAILY_CAP = Number(process.env.JOBS_DAILY_CAP || 300);
 // Apply window in UTC hours (08:00–20:00 WAT = 07:00–19:00 UTC).
 const WINDOW = (process.env.JOBS_APPLY_WINDOW || "7-19").split("-").map((n) => Number(n));
 const MIN_GAP_MS = Number(process.env.JOBS_APPLY_GAP_MS || 120000);

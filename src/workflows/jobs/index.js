@@ -11,6 +11,9 @@ const { sendMatchEmail } = require("./emailer");
 const MAX_PER_RUN = Number(process.env.JOBS_MAX_PER_RUN || 40);
 // Cap how many match-emails go out per scan (Gmail pacing + resume PDF cost).
 const EMAIL_CAP_PER_RUN = Number(process.env.JOBS_EMAIL_CAP_PER_RUN || 10);
+// Per-scan auto-apply budget (user rule: ~10 applications per 30 minutes).
+const APPLY_PER_RUN = Number(process.env.JOBS_APPLY_PER_RUN || 10);
+let appliesThisRun = 0;
 // FRESHNESS GATE: never apply to a role older than this (default 14 days).
 // Newly-posted roles (24h–2 weeks) are the target; anything older is stale.
 const MAX_AGE_DAYS = Number(process.env.JOBS_MAX_AGE_DAYS || 14);
@@ -62,10 +65,14 @@ async function maybeSubmit(job, app) {
   if (appliedToday >= DAILY_CAP) {
     return "prepared"; // leave queued (matched) — will retry when cap resets
   }
+  if (appliesThisRun >= APPLY_PER_RUN) {
+    return "prepared"; // per-scan budget used (~10 per 30 min) — retry next scan
+  }
   const res = await submitApplication(job, app);
   if (res.ok) {
     await db.markApplied(job.id, res.response);
-    console.log(`[Jobs] ✅ applied ${job.company} / ${job.title} — ${res.response}`);
+    appliesThisRun++;
+    console.log(`[Jobs] ✅ applied ${job.company} / ${job.title} — ${res.response} (${appliesThisRun}/${APPLY_PER_RUN} this run)`);
     return "applied";
   }
   if (res.skipped) {
@@ -98,6 +105,7 @@ async function prepareAndSubmit(job) {
 
 async function runOnce() {
   console.log(`[Jobs] Pipeline run @ ${new Date().toISOString()} (auto-apply: ${AUTO_APPLY ? "ON" : "DRY-RUN"})`);
+  appliesThisRun = 0; // fresh per-scan apply budget
 
   // 0. Clean stale queued matches so the queue only holds fresh (≤14d) roles.
   try { await db.expireStaleMatched(MAX_AGE_DAYS); } catch (e) { console.warn("[Jobs] expireStaleMatched:", e.message); }

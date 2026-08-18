@@ -33,7 +33,12 @@ REQUIREMENTS:
 0. HEADER — ALWAYS start with the header exactly like the candidate's original resume: NAME on one line, TITLE on the next line, then the contact line in this format: WAT (GMT+1) | email | phone | linkedin | github
 1. PROFESSIONAL SUMMARY — make it PRECISE and DIRECT, in the candidate's own style (short, confident, few sentences), but adapted to THIS job and company. Lead with the specific value this role needs. Do NOT use vague filler.
 2. SKILLS — list ONLY the skills relevant to THIS job. Drop anything irrelevant. Order by relevance to the JD's keywords.
-3. PROJECTS — keep only the 1-3 most relevant projects, and rephrase their bullets to mirror THIS job's language and technology. (Prefer projects with live URLs: CloudVoid at https://cloudvoid.online and Myzelva at https://myzelva.com — include their URLs.)
+3. PROJECTS — keep only the 1-3 most relevant projects, and rephrase their bullets to mirror THIS job's language and technology. (Prefer projects with live URLs: CloudVoid at https://cloudvoid.online and Myzelva at https://myzelva.com.) Format EACH project EXACTLY like this:
+   PROJECT NAME
+   ROLE | YEARS | URL (include the live URL only if the project has one; otherwise ROLE | YEARS)
+   - bullet
+   - bullet
+   Keep the original PROJECTS structure — never merge projects into the EXPERIENCE section.
 4. EXPERIENCE — THIS IS THE DIFFERENTIATOR. Format each real entry EXACTLY like this proven template:
    ROLE | COMPANY | REMOTE
    DATES

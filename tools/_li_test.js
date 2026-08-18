@@ -1,4 +1,5 @@
 // Temp: verify LinkedIn guest parsing with 24h filter + date regex.
+require("dotenv").config();
 const { fetchLinkedInJobs } = require("../src/workflows/jobs/sources/linkedin");
 
 (async () => {
