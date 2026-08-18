@@ -185,6 +185,10 @@ async function fetchLinkedInJobs() {
   const descs = await Promise.all(needDesc.map((c) => fetchDescription(c.url)));
   const descMap = new Map(needDesc.map((c, i) => [c.id, descs[i]]));
 
+  // These postings came from the guest API with f_WT=2 = REMOTE-ONLY, so they
+  // are all remote even when the card shows a city. Mark them "Remote (city)"
+  // so the pipeline's location gate (isLocationAllowed) doesn't wrongly skip
+  // them, while keeping the geo context for the matcher.
   const jobs = cards.map((c) => ({
     source: "linkedin",
     refId: c.id,
@@ -192,7 +196,7 @@ async function fetchLinkedInJobs() {
     company: c.company,
     title: c.title,
     url: c.url,
-    location: c.location,
+    location: c.location && !/remote/i.test(c.location) ? `Remote (${c.location})` : (c.location || "Remote"),
     salary: null,
     description: c.description || descMap.get(c.id) || "",
     postedAt: c.postedAt,
