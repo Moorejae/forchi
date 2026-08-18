@@ -278,6 +278,39 @@ async function countEmailsSent() {
   return row ? Number(row.c) : 0;
 }
 
+// Cross-source "never handle the same job twice": true if a job with the same
+// company + title (case-insensitive) was already emailed OR already applied to
+// via ANY source (the same real role can be discovered by LinkedIn + a board).
+async function hasSimilarHandled(company, title) {
+  if (!company || !title) return false;
+  const db = await getJobsDB();
+  const row = await db.get(
+    `SELECT 1 FROM emails e JOIN jobs j ON j.id = e.job_id
+     WHERE LOWER(j.company) = LOWER(?) AND LOWER(j.title) = LOWER(?) LIMIT 1`,
+    [company, title]
+  );
+  if (row) return true;
+  const appRow = await db.get(
+    `SELECT 1 FROM applications a JOIN jobs j ON j.id = a.job_id
+     WHERE a.submitted = 1 AND LOWER(j.company) = LOWER(?) AND LOWER(j.title) = LOWER(?) LIMIT 1`,
+    [company, title]
+  );
+  return !!appRow;
+}
+
+// Drop stale queued matches (> maxAgeDays) so the queue only holds fresh roles.
+async function expireStaleMatched(maxAgeDays) {
+  const db = await getJobsDB();
+  const cutoff = new Date(Date.now() - maxAgeDays * 86400000).toISOString();
+  const r = await db.run(
+    `UPDATE jobs SET status = 'skipped', updated_at = ? WHERE status = 'matched' AND COALESCE(posted_at, created_at) < ?`,
+    [new Date().toISOString(), cutoff]
+  );
+  const n = (r && r.changes) || 0;
+  if (n) console.log(`[Jobs] Expired ${n} stale queued matches (> ${maxAgeDays}d).`);
+  return n;
+}
+
 async function getApplied() {
   const db = await getJobsDB();
   return db.all(
@@ -307,5 +340,5 @@ module.exports = {
   getJobsDB, insertJobs, getNewJobs, getJobsByStatus, getJobById,
   setJobStatus, setJobScore, storeApplication, getApplicationForJob,
   hasApplied, markApplied, countAppliedToday, getApplied, getStats,
-  markEmailSent, hasEmailSent, countEmailsSent,
+  markEmailSent, hasEmailSent, countEmailsSent, hasSimilarHandled, expireStaleMatched,
 };

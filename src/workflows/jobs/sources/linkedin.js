@@ -12,20 +12,17 @@
 // unknown source this way.
 const { searchWeb } = require("../../../llm/webSearch");
 
+// User's LinkedIn search recipe: contractor / freelance / global remote / AI /
+// AI integration / Automation, remote, under 10 applicants, posted past 24h.
 const KEYWORDS = [
   "AI Engineer",
-  "AI Integration Engineer",
-  "AI Automation Engineer",
-  "AI Solutions Engineer",
-  "Machine Learning Engineer",
-  "Cloud Engineer",
-  "DevOps Engineer",
-  "Backend Developer",
-  "Python Developer",
+  "AI Integration",
   "Automation Engineer",
-  "Platform Engineer",
+  "contractor",
+  "freelance",
+  "global remote",
 ];
-const MAX_CARDS = 40; // cards parsed per scan (8 keywords × 10/page, capped)
+const MAX_CARDS = 40; // cards parsed per scan
 const MAX_DESC_FETCH = 10; // posting pages to fetch for description
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
@@ -46,7 +43,9 @@ function parseCards(html) {
     const title = stripTags((block.match(/base-search-card__title">([\s\S]*?)<\/h3>/) || [])[1]);
     const company = stripTags((block.match(/base-search-card__subtitle">([\s\S]*?)<\/h4>/) || [])[1]);
     const location = stripTags((block.match(/job-search-card__location">([\s\S]*?)<\/span>/) || [])[1]);
-    const postedAt = (block.match(/job-search-card__listdate" datetime="([^"]+)"/) || [])[1];
+    // The date element uses class "job-search-card__listdate" normally and
+    // "job-search-card__listdate--new" under the f_TPR (time) filter.
+    const postedAt = (block.match(/job-search-card__listdate[^"]*" datetime="([^"]+)"/) || [])[1];
     if (!id || !title) continue;
     const cleanUrl = `https://www.linkedin.com/jobs/view/${id}`;
     cards.push({ id, url: cleanUrl, title, company: company || "LinkedIn", location: location || "Remote", postedAt: postedAt || null });
@@ -81,12 +80,14 @@ async function fetchDescription(url) {
   }
 }
 
-// Primary: LinkedIn guest jobs search endpoint (public, remote-only).
+// Primary: LinkedIn guest jobs search endpoint (public).
+// Filters: f_WT=2 (remote) · f_TPR=r86400 (posted in the past 24h) ·
+//          f_AL=true (under 10 applicants).
 async function fetchLinkedInGuest() {
   const seen = new Map(); // id -> card
   for (const kw of KEYWORDS) {
     if (seen.size >= MAX_CARDS) break;
-    const url = `https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=${encodeURIComponent(kw)}&location=Remote&f_WT=2&start=0`;
+    const url = `https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=${encodeURIComponent(kw)}&location=Remote&f_WT=2&f_TPR=r86400&f_AL=true&start=0`;
     try {
       const res = await fetch(url, { headers: { "User-Agent": UA }, redirect: "follow", signal: AbortSignal.timeout(12000) });
       if (!res.ok) { console.warn(`[Jobs] LinkedIn guest ${kw}: HTTP ${res.status}`); continue; }

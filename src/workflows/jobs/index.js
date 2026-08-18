@@ -19,7 +19,14 @@ const AUTO_SOURCES = ["greenhouse", "lever", "workable", "ashby"];
 // (link + cover letter + tailored resume PDF) for manual tap-through apply.
 async function maybeEmailMatch(job) {
   if (AUTO_SOURCES.includes(job.source)) return; // these auto-apply instead
-  if (await db.hasEmailSent(job.id)) return; // never double-email
+  if (await db.hasEmailSent(job.id)) return; // never double-email this row
+  // Cross-source guard: if the SAME company+title was already emailed or
+  // applied to via another source, don't email it again.
+  if (await db.hasSimilarHandled(job.company, job.title)) {
+    await db.markEmailSent(job.id);
+    console.log(`[Jobs] dedup: already handled ${job.company} / ${job.title} — skipping email`);
+    return;
+  }
   const app = await db.getApplicationForJob(job.id);
   if (!app) return;
   const ok = await sendMatchEmail(job, {
@@ -85,6 +92,9 @@ async function prepareAndSubmit(job) {
 
 async function runOnce() {
   console.log(`[Jobs] Pipeline run @ ${new Date().toISOString()} (auto-apply: ${AUTO_APPLY ? "ON" : "DRY-RUN"})`);
+
+  // 0. Clean stale queued matches so the queue only holds fresh (≤14d) roles.
+  try { await db.expireStaleMatched(MAX_AGE_DAYS); } catch (e) { console.warn("[Jobs] expireStaleMatched:", e.message); }
 
   // 1. Discover + dedupe into DB.
   let added = 0;
