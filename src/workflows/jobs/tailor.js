@@ -34,7 +34,17 @@ REQUIREMENTS:
 1. PROFESSIONAL SUMMARY — make it PRECISE and DIRECT, in the candidate's own style (short, confident, few sentences), but adapted to THIS job and company. Lead with the specific value this role needs. Do NOT use vague filler.
 2. SKILLS — list ONLY the skills relevant to THIS job. Drop anything irrelevant. Order by relevance to the JD's keywords.
 3. PROJECTS — keep only the 1-3 most relevant projects, and rephrase their bullets to mirror THIS job's language and technology. (Prefer projects with live URLs: CloudVoid at https://cloudvoid.online and Myzelva at https://myzelva.com — include their URLs.)
-4. EXPERIENCE — THIS IS THE DIFFERENTIATOR. List the candidate's REAL work history from the "experience" data (company/role/years/bullets — never invent any). For EACH entry, after the real facts, add ONE short clause showing how that same build maps to THIS company's vision/needs (from companyResearch + the JD) — e.g. "same approach I'd bring to your {X} vision". This proves to HR that the job description was read and the candidate genuinely understands the company. Do NOT invent employers or roles — only relate the real experience to the company.
+4. EXPERIENCE — THIS IS THE DIFFERENTIATOR. Format each real entry EXACTLY like this proven template:
+   ROLE | COMPANY | REMOTE
+   DATES
+   - bullet
+   - bullet
+
+   For each entry write 2-3 bullets, each ONE action-oriented line that:
+   - states what was ACTUALLY built, using ONLY the real "experience" data below (never invent employers, roles, dates, projects, or numbers),
+   - MIRRORS THIS JOB'S OWN LANGUAGE AND TECHNOLOGY — use the JD's exact terms, frameworks, and pain points when describing the real work, so HR instantly sees you read their description,
+   - states the real result honestly — DO NOT invent metrics (no "reduced by 40%", no "99.99% uptime", no "5+ microservices" unless the real data actually says it).
+   Do NOT add generic filler like "same approach I'd bring to your vision". Mirroring their exact vocabulary in your real accomplishments IS the proof you read the JD.
 5. CERTIFICATIONS — ALWAYS include this section at the bottom, using the candidate's real certifications listed below. Never omit it.
 
 HARD RULES:

@@ -59,11 +59,14 @@ function getResumeBuffer(tailoredText) {
   try {
     const PDFDocument = require("pdfkit");
     if (tailoredText && tailoredText.length > 100) {
-      const chunks = [];
-      return new Promise((resolve) => {
+      // Render at a given font scale; returns the buffer + how many pages it used.
+      const render = (scale) => new Promise((resolve) => {
+        const chunks = [];
+        let pages = 1;
         const doc = new PDFDocument({ size: "LETTER", margin: 48 });
         doc.on("data", (c) => chunks.push(c));
-        doc.on("end", () => resolve(Buffer.concat(chunks)));
+        doc.on("pageAdded", () => { pages++; });
+        doc.on("end", () => resolve({ buf: Buffer.concat(chunks), pages }));
 
         doc.registerFont("Carlito-Regular", F.regular);
         doc.registerFont("Carlito-Bold", F.bold);
@@ -75,6 +78,7 @@ function getResumeBuffer(tailoredText) {
         const DARK = "#1a1a1a";
         const margin = 48;
         const width = doc.page.width - margin * 2;
+        const S = scale; // font-size multiplier
 
         const lines = String(tailoredText).split("\n").map((l) => cleanLine(l)).filter(Boolean);
 
@@ -84,38 +88,50 @@ function getResumeBuffer(tailoredText) {
         const contact = lines[2] || "";
         const bodyLines = lines.slice(3);
 
-        doc.font("Carlito-Bold").fontSize(18).fillColor(ACCENT).text(name.toUpperCase());
-        if (title) doc.moveDown(0.2).font("Carlito-Regular").fontSize(11.5).fillColor(DARK).text(title);
-        if (contact) doc.moveDown(0.2).font("Carlito-Regular").fontSize(8.5).fillColor(GRAY).text(contact);
-        doc.moveDown(0.5);
+        doc.font("Carlito-Bold").fontSize(18 * S).fillColor(ACCENT).text(name.toUpperCase());
+        if (title) doc.moveDown(0.2 * S).font("Carlito-Regular").fontSize(11.5 * S).fillColor(DARK).text(title);
+        if (contact) doc.moveDown(0.2 * S).font("Carlito-Regular").fontSize(8.5 * S).fillColor(GRAY).text(contact);
+        doc.moveDown(0.5 * S);
         doc.moveTo(margin, doc.y).lineTo(margin + width, doc.y).lineWidth(1.3).strokeColor(ACCENT).stroke();
-        doc.moveDown(1);
+        doc.moveDown(1 * S);
 
         // ── Sections ──
         for (const line of bodyLines) {
           if (isSectionHeading(line)) {
-            doc.moveDown(0.7);
-            doc.font("Carlito-Bold").fontSize(10.5).fillColor(ACCENT).text(line.toUpperCase());
-            doc.moveDown(0.1);
+            doc.moveDown(0.7 * S);
+            doc.font("Carlito-Bold").fontSize(10.5 * S).fillColor(ACCENT).text(line.toUpperCase());
+            doc.moveDown(0.1 * S);
             doc.moveTo(margin, doc.y).lineTo(margin + width, doc.y).lineWidth(0.6).strokeColor(ACCENT).opacity(0.6).stroke().opacity(1);
-            doc.moveDown(0.55);
+            doc.moveDown(0.55 * S);
             continue;
           }
           if (isProjectHeader(line)) {
-            doc.moveDown(0.4);
-            doc.font("Carlito-Bold").fontSize(10).fillColor(DARK).text(line);
-            doc.moveDown(0.12);
+            doc.moveDown(0.4 * S);
+            doc.font("Carlito-Bold").fontSize(10 * S).fillColor(DARK).text(line);
+            doc.moveDown(0.12 * S);
             continue;
           }
           const bullet = /^[-•*]/.test(line);
           const text = bullet ? line.replace(/^[-•*]\s*/, "") : line;
-          doc.font("Carlito-Regular").fontSize(9.5).fillColor(DARK);
-          doc.text(bullet ? `•  ${text}` : text, { lineGap: 1, paragraphGap: 2.5, indent: bullet ? 11 : 0 });
-          doc.moveDown(0.1);
+          doc.font("Carlito-Regular").fontSize(9.5 * S).fillColor(DARK);
+          doc.text(bullet ? `•  ${text}` : text, { lineGap: 1 * S, paragraphGap: 2.5 * S, indent: bullet ? 11 * S : 0 });
+          doc.moveDown(0.1 * S);
         }
 
         doc.end();
       });
+
+      // ONE-PAGE GUARANTEE: render at full size, shrink the fonts until it
+      // fits a single US Letter page (HR never wants a 2-page resume).
+      return (async () => {
+        for (const scale of [1, 0.95, 0.9, 0.85, 0.8, 0.75]) {
+          const { buf, pages } = await render(scale);
+          if (pages <= 1) { if (scale < 1) console.log(`[Jobs] resume fit to 1 page @ ${Math.round(scale * 100)}%`); return buf; }
+          console.warn(`[Jobs] resume overflowed ${pages} pages @ ${Math.round(scale * 100)}% — shrinking…`);
+        }
+        const { buf } = await render(0.75);
+        return buf;
+      })();
     }
   } catch (e) {
     console.warn("[Jobs] pdfkit unavailable, using base resume:", e.message);
