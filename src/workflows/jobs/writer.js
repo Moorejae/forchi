@@ -28,7 +28,10 @@ async function writeApplication({ job, companyResearch }) {
     PORTFOLIO.map((p) => ({ project: p.project, role: p.role, years: p.years, url: p.url, facts: p.facts })),
     null, 1
   );
-  const withCoverLetter = jobNeedsCoverLetter(job);
+  // ALWAYS write a cover letter — it is the differentiator (proves the JD was
+  // read + maps real builds to the company). The old gate only wrote one when
+  // the JD explicitly asked, which left almost every letter empty.
+  const withCoverLetter = true;
   const lang = detectLanguage(job.description || "");
 
   const coverInstructions = withCoverLetter
