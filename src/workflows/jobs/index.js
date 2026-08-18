@@ -6,11 +6,28 @@ const { researchCompany } = require("./researcher");
 const { writeApplication } = require("./writer");
 const { tailorResume } = require("./tailor");
 const { submitApplication, AUTO_APPLY, DAILY_CAP } = require("./applyEngine");
+const { sendMatchEmail } = require("./emailer");
 
 const MAX_PER_RUN = Number(process.env.JOBS_MAX_PER_RUN || 25);
 // FRESHNESS GATE: never apply to a role older than this (default 14 days).
 // Newly-posted roles (24h–2 weeks) are the target; anything older is stale.
 const MAX_AGE_DAYS = Number(process.env.JOBS_MAX_AGE_DAYS || 14);
+// Sources with a trusted auto-apply submitter.
+const AUTO_SOURCES = ["greenhouse", "lever", "workable", "ashby"];
+
+// Semi-auto matches (no trusted submitter) get emailed — one email per job
+// (link + cover letter + tailored resume PDF) for manual tap-through apply.
+async function maybeEmailMatch(job) {
+  if (AUTO_SOURCES.includes(job.source)) return; // these auto-apply instead
+  if (await db.hasEmailSent(job.id)) return; // never double-email
+  const app = await db.getApplicationForJob(job.id);
+  if (!app) return;
+  const ok = await sendMatchEmail(job, {
+    coverLetter: app.cover_letter,
+    resumeTailored: app.resume_tailored,
+  });
+  if (ok) await db.markEmailSent(job.id);
+}
 
 // Age of a job in days, using the posting date when the source provides one,
 // else the date we first discovered it (created_at) as a proxy. Unknown → 0
@@ -110,13 +127,13 @@ async function runOnce() {
     }
     const r = await prepareAndSubmit(job);
     tally[r] = (tally[r] || 0) + 1;
+    // Semi-auto match (no trusted submitter) → email it (one email per job).
+    if (r === "prepared") await maybeEmailMatch(job);
   }
 
   // 3. Retry already-prepared (matched) jobs when the window/cap opens up.
-  //    Only AUTO-APPLIABLE sources are retried; semi-auto sources (linkedin,
-  //    remotive, jobicy, arbeitnow, himalayas, remoteok, weworkremotely) have
-  //    no submitter, so they stay queued as a manual-apply list.
-  const AUTO_SOURCES = ["greenhouse", "lever", "workable", "ashby"];
+  //    Only AUTO-APPLIABLE sources are retried; semi-auto sources are emailed
+  //    once at match time (maybeEmailMatch) and stay queued as a manual list.
   const queued = (await db.getJobsByStatus("matched")).filter((j) => AUTO_SOURCES.includes(j.source));
   for (const job of queued.slice(0, MAX_PER_RUN)) {
     // Freshness gate also applies to queued jobs — a queued role that has since

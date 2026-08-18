@@ -9,12 +9,13 @@ const { AUTO_APPLY, DAILY_CAP, inApplyWindow } = require("./applyEngine");
 async function formatStatus() {
   const s = await statusSummary();
   const byStatus = s.byStatus || {};
+  const emailed = await db.countEmailsSent();
   const lines = [
     `🤖 *ForChi Jobs agent*`,
     `State: ${jobsMode.isEnabled() ? "RUNNING ✅" : "STOPPED ⛔"} · Apply: ${s.mode}`,
     `Cap: ${s.cap}/day · Window: ${inApplyWindow() ? "open now" : "closed (08:00–20:00 WAT)"}`,
     `Fresh: applies to roles ≤ ${MAX_AGE_DAYS}d old`,
-    `Total jobs: ${s.totalJobs} · Applied: ${s.applied} · Queued: ${s.pendingApply}`,
+    `Total jobs: ${s.totalJobs} · Applied: ${s.applied} · Emailed: ${emailed} · Queued: ${s.pendingApply}`,
     `By status: ${Object.entries(byStatus).map(([k, v]) => `${k}=${v}`).join(", ")}`,
   ];
   return lines.join("\n");

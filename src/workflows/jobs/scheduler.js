@@ -27,6 +27,7 @@ async function buildDailyReportText() {
   const since = new Date(Date.now() - 86400000).toISOString();
   const last24 = await db.countAppliedSince(since);
   const s = await statusSummary();
+  const emailed = await db.countEmailsSent();
   const applied = await db.getApplied();
   const dateStr = new Date().toLocaleString("en-GB", {
     timeZone: "Africa/Lagos", weekday: "long", day: "2-digit", month: "short",
@@ -38,6 +39,7 @@ async function buildDailyReportText() {
     `━━━━━━━━━━━━━━━━━━`,
     `✅ Applied in last 24h: *${last24}*`,
     `📊 Total applied: ${s.applied}`,
+    `📧 Emailed (manual apply): ${emailed}`,
     `⏳ Queued to apply: ${s.pendingApply}`,
     `⏭ Skipped: ${(s.byStatus && s.byStatus.skipped) || 0}`,
     `🔍 Total jobs seen: ${s.totalJobs}`,

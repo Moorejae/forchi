@@ -48,6 +48,11 @@ const SQLITE_DDL = `
     CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs (status);
     CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs (created_at);
     CREATE INDEX IF NOT EXISTS idx_app_applied ON applications (applied_at);
+    CREATE TABLE IF NOT EXISTS emails (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id INTEGER NOT NULL UNIQUE,
+      sent_at TEXT NOT NULL
+    );
 `;
 
 const PG_DDL = `
@@ -83,6 +88,11 @@ const PG_DDL = `
     CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs (status);
     CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs (created_at);
     CREATE INDEX IF NOT EXISTS idx_app_applied ON applications (applied_at);
+    CREATE TABLE IF NOT EXISTS emails (
+      id BIGSERIAL PRIMARY KEY,
+      job_id BIGINT NOT NULL UNIQUE,
+      sent_at TEXT NOT NULL
+    );
 `;
 
 // Convert SQLite ? placeholders to Postgres $1, $2, ...
@@ -248,6 +258,26 @@ async function countAppliedSince(iso) {
   return row ? Number(row.c) : 0;
 }
 
+async function markEmailSent(jobId) {
+  const db = await getJobsDB();
+  await db.run(
+    `INSERT INTO emails (job_id, sent_at) VALUES (?, ?) ON CONFLICT (job_id) DO NOTHING`,
+    [jobId, new Date().toISOString()]
+  );
+}
+
+async function hasEmailSent(jobId) {
+  const db = await getJobsDB();
+  const row = await db.get(`SELECT 1 FROM emails WHERE job_id = ?`, [jobId]);
+  return !!row;
+}
+
+async function countEmailsSent() {
+  const db = await getJobsDB();
+  const row = await db.get(`SELECT COUNT(*) AS c FROM emails`);
+  return row ? Number(row.c) : 0;
+}
+
 async function getApplied() {
   const db = await getJobsDB();
   return db.all(
@@ -277,4 +307,5 @@ module.exports = {
   getJobsDB, insertJobs, getNewJobs, getJobsByStatus, getJobById,
   setJobStatus, setJobScore, storeApplication, getApplicationForJob,
   hasApplied, markApplied, countAppliedToday, getApplied, getStats,
+  markEmailSent, hasEmailSent, countEmailsSent,
 };
