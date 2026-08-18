@@ -40,7 +40,11 @@ async function sendMatchEmail(job, { coverLetter, resumeTailored }) {
       host: SMTP_HOST,
       port: SMTP_PORT,
       secure: SMTP_PORT === 465,
+      family: 4, // force IPv4 — Render free tier has no IPv6 (ENETUNREACH otherwise)
       auth: { user: SMTP_USER, pass: SMTP_PASS },
+      connectionTimeout: 20000,
+      greetingTimeout: 20000,
+      socketTimeout: 40000,
     });
 
     let resumePdf = null;
