@@ -128,20 +128,77 @@ async function openPostgres() {
     );
   }
   const { Client } = require("pg");
-  const client = new Client({
-    connectionString: dsn,
-    ssl: { rejectUnauthorized: false },
-    statement_timeout: 30000,
-  });
-  await client.connect();
-  await client.query(PG_DDL);
-  console.log("[JobsDB] PostgreSQL initialized (persistent across deploys).");
+
+  // A dropped Postgres connection used to emit an UNHANDLED 'error' event that
+  // crashed the ENTIRE process (killing the Telegram bot + the social auto-post
+  // scheduler with it). We now attach an error handler so the process survives,
+  // mark the socket dead, and reconnect lazily on the next query.
+  let client = null;
+  let connecting = null;
+
+  async function connect() {
+    // Fast path: existing healthy client.
+    if (client && !client._forchiDead) {
+      try {
+        await client.query("SELECT 1"); // cheap liveness check (low query rate)
+        return client;
+      } catch (_) {
+        client = null; // silently dead socket — reconnect below
+      }
+    }
+    if (connecting) return connecting;
+    connecting = (async () => {
+      const c = new Client({
+        connectionString: dsn,
+        ssl: { rejectUnauthorized: false },
+        statement_timeout: 30000,
+        connectionTimeoutMillis: 15000,
+      });
+      // CRITICAL: without this handler, a dropped connection crashes the bot.
+      c.on("error", (err) => {
+        c._forchiDead = true;
+        console.error(`[JobsDB] PostgreSQL connection dropped (process kept alive): ${err.message}`);
+      });
+      await c.connect();
+      await c.query(PG_DDL);
+      client = c;
+      console.log("[JobsDB] PostgreSQL connected (persistent across deploys).");
+      return c;
+    })();
+    try {
+      return await connecting;
+    } finally {
+      connecting = null;
+    }
+  }
+
+  // Run an op against a live client; on a connection-type failure, reconnect
+  // exactly once and retry so transient DB drops never fail the workflow.
+  async function withClient(op) {
+    let lastErr;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const db = await connect();
+      try {
+        return await op(db);
+      } catch (err) {
+        lastErr = err;
+        if (/ECONNRESET|ECONNREFUSED|socket|terminat|Connection|connection/i.test(err.message || "")) {
+          client = null; // force a fresh connection and retry once
+          continue;
+        }
+        throw err;
+      }
+    }
+    throw lastErr;
+  }
+
+  await connect();
   return {
-    async run(sql, params) { const r = await client.query(pgParams(sql, params)); return { changes: r.rowCount || 0 }; },
-    async get(sql, params) { const r = await client.query(pgParams(sql, params)); return r.rows[0]; },
-    async all(sql, params) { const r = await client.query(pgParams(sql, params)); return r.rows; },
-    async exec(sql) { await client.query(sql); },
-    async close() { await client.end(); },
+    run: (sql, params) => withClient((db) => db.query(pgParams(sql, params)).then((r) => ({ changes: r.rowCount || 0 }))),
+    get: (sql, params) => withClient((db) => db.query(pgParams(sql, params)).then((r) => r.rows[0])),
+    all: (sql, params) => withClient((db) => db.query(pgParams(sql, params)).then((r) => r.rows)),
+    exec: (sql) => withClient((db) => db.query(sql)),
+    close: () => (client && !client._forchiDead ? client.end().catch(() => {}) : Promise.resolve()),
   };
 }
 
@@ -339,6 +396,6 @@ async function getStats() {
 module.exports = {
   getJobsDB, insertJobs, getNewJobs, getJobsByStatus, getJobById,
   setJobStatus, setJobScore, storeApplication, getApplicationForJob,
-  hasApplied, markApplied, countAppliedToday, getApplied, getStats,
+  hasApplied, markApplied, countAppliedToday, countAppliedSince, getApplied, getStats,
   markEmailSent, hasEmailSent, countEmailsSent, hasSimilarHandled, expireStaleMatched,
 };

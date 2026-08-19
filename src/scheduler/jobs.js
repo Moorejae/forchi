@@ -74,11 +74,31 @@ function pick(arr, seed) {
 }
 
 let running = false;
+let registered = false;
+let cronTask = null;
+let lastRun = null; // { at, fb: "ok"|"err", li: "ok"|"err", fbError, liError }
+
+// Read-only snapshot used by /diag and the self-healing repair flow.
+function getSchedulerState() {
+  return { registered, running, autoMode: autoMode.isEnabled(), lastRun, schedule: AUTO_SCHEDULE };
+}
+
+// Clear a stuck "running" flag (e.g. after a crash mid-run) so the next tick fires.
+function resetRunning() {
+  if (running) {
+    console.warn("[Scheduler] resetRunning: cleared a stuck in-progress flag.");
+    running = false;
+  }
+}
 
 function initScheduler() {
+  if (registered) {
+    console.log("[Scheduler] Auto mode already registered — skipping duplicate.");
+    return;
+  }
   console.log(`[Scheduler] Initializing AUTO mode (5 posts/day, 4h apart, UTC)... (currently ${autoMode.isEnabled() ? "ON ✅" : "OFF ⛔"})`);
 
-  cron.schedule(
+  cronTask = cron.schedule(
     AUTO_SCHEDULE,
     async () => {
       if (!autoMode.isEnabled()) {
@@ -115,17 +135,22 @@ function initScheduler() {
           socialWorkflow.run({ destinations: ["linkedin"], content: liContent.postText, visualTopic: liContent.visualTopic }),
         ]);
 
+        const perPlatform = { facebook: "err", linkedin: "err", fbError: null, liError: null };
         results.forEach((r, i) => {
           const platform = i === 0 ? "facebook" : "linkedin";
           if (r.status === "fulfilled" && r.value.success) {
+            perPlatform[platform] = "ok";
             console.log(`[Auto] ✅ ${platform} post succeeded`);
           } else {
             const err = r.status === "fulfilled" ? r.value.errorSummary : r.reason?.message;
+            perPlatform[`${platform === "facebook" ? "fb" : "li"}Error`] = err || "unknown";
             console.error(`[Auto] ❌ ${platform} post failed: ${err || "unknown"}`);
           }
         });
+        lastRun = { at: new Date().toISOString(), fb: perPlatform.facebook, li: perPlatform.linkedin };
       } catch (err) {
         console.error("[Auto] Error during auto-post:", err.message);
+        lastRun = { at: new Date().toISOString(), fb: "err", li: "err", fbError: err.message, liError: err.message };
       } finally {
         running = false;
       }
@@ -133,7 +158,19 @@ function initScheduler() {
     { scheduled: true, timezone: "UTC" }
   );
 
+  registered = true;
   console.log(`[Scheduler] Auto mode registered (${AUTO_SCHEDULE} UTC).`);
 }
 
-module.exports = { initScheduler };
+// Tear down and re-register the scheduler (used by /fix and boot-time self-heal).
+function reRegister() {
+  if (cronTask) {
+    try { cronTask.destroy(); } catch (_) { /* node-cron may already be destroyed */ }
+    cronTask = null;
+  }
+  registered = false;
+  running = false;
+  initScheduler();
+}
+
+module.exports = { initScheduler, reRegister, getSchedulerState, resetRunning };

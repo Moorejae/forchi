@@ -8,7 +8,21 @@ const jobsMode = require("./jobsMode");
 const notifyTarget = require("./notifyTarget");
 
 let timer = null;
+let reportTask = null; // node-cron task for the daily 19:00 UTC report
 let running = false;
+
+function isJobsSchedulerRunning() {
+  return !!timer;
+}
+
+function stopJobsScheduler() {
+  if (timer) { clearInterval(timer); timer = null; }
+  if (reportTask) {
+    try { reportTask.destroy(); } catch (_) {}
+    reportTask = null;
+  }
+  running = false;
+}
 
 async function runSafe() {
   if (running) return;
@@ -82,6 +96,8 @@ async function sendDailyReport(bot) {
 }
 
 function startJobsScheduler({ bot } = {}) {
+  // Idempotent + restartable: tear down any existing loop/cron before (re)starting.
+  stopJobsScheduler();
   const intervalMin = Math.max(5, Number(process.env.JOBS_SCAN_INTERVAL_MIN || 30));
   console.log(`[JobsScheduler] Constant-AUTO loop every ${intervalMin} min (${jobsMode.isEnabled() ? "ON ✅" : "OFF ⛔"}).`);
   console.log(`[JobsScheduler] Auto-apply: ${(process.env.JOBS_AUTO_APPLY || "false") === "true" ? "LIVE 🚀" : "DRY-RUN (prepares only)"}`);
@@ -98,7 +114,7 @@ function startJobsScheduler({ bot } = {}) {
   }, intervalMin * 60000);
 
   // Daily (every-24h) report: 19:00 UTC = 20:00 WAT (8pm Nigerian time).
-  nodeCron.schedule("0 19 * * *", () => sendDailyReport(bot));
+  reportTask = nodeCron.schedule("0 19 * * *", () => sendDailyReport(bot));
 }
 
-module.exports = { startJobsScheduler, runSafe, sendDailyReport, buildDailyReportText };
+module.exports = { startJobsScheduler, stopJobsScheduler, isJobsSchedulerRunning, runSafe, sendDailyReport, buildDailyReportText };

@@ -11,8 +11,10 @@ const { buildDailyReportText } = require("./workflows/jobs/scheduler");
 const { chatReply } = require("./llm/chatChain");
 const socialWorkflow = require("./workflows/social/index");
 const { processVoiceMessage } = require("./voice/transcriber");
-const { initScheduler } = require("./scheduler/jobs");
+const { initScheduler, reRegister, getSchedulerState } = require("./scheduler/jobs");
 const autoMode = require("./scheduler/autoMode");
+const health = require("./scheduler/health");
+const { detectDiagRequest, detectRepairRequest } = require("./router/healthIntent");
 const db = require("./store/db");
 const jobsScheduler = require("./workflows/jobs/scheduler");
 const { registerJobsCommands } = require("./workflows/jobs/commands");
@@ -21,6 +23,17 @@ const jobsNotify = require("./workflows/jobs/notifyTarget");
 
 // Force IPv4 for DNS resolution (avoids IPv6 timeouts in containers)
 if (dns.setDefaultResultOrder) dns.setDefaultResultOrder("ipv4first");
+
+// ── Process-level crash guards ──────────────────────────────────────────────
+// This bot runs the social auto-post scheduler + the jobs agent. A single stray
+// error must never take the whole process (and both workflows) down. Log loudly,
+// keep serving — the schedulers each have their own try/catch for real work.
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("[ProcessGuard] Unhandled rejection (kept alive):", reason instanceof Error ? reason.stack || reason.message : reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[ProcessGuard] Uncaught exception (kept alive):", err.stack || err.message);
+});
 
 console.log(`\n===== ForChi Telegram Bot Startup =====\n`);
 console.log("[DIAG] TELEGRAM_BOT_TOKEN present:", !!process.env.TELEGRAM_BOT_TOKEN);
@@ -62,6 +75,7 @@ bot.start((ctx) => {
   );
 });
 registerJobsCommands(bot);
+health.registerHealthCommands(bot);
 
 // ── Database + Scheduler ──────────────────────────────────────────────────────
 db.getDB()
@@ -70,6 +84,28 @@ db.getDB()
     jobsScheduler.startJobsScheduler({ bot });
   })
   .catch((err) => console.error("[DB Error]", err.message));
+
+// ── Self-healing watchdog ────────────────────────────────────────────────────
+// Every 10 min, verify both workflows are alive. If the social scheduler is
+// unregistered, the jobs loop is down, or the jobs DB is unreachable, run the
+// deterministic repair automatically — so failures self-heal without waiting
+// for Victor to notice or type /fix.
+setInterval(async () => {
+  try {
+    const snap = await health.getHealthSnapshot();
+    const broken =
+      !snap.social.registered ||
+      snap.jobs.schedulerRunning === false ||
+      (typeof snap.db.jobsDb === "string" && snap.db.jobsDb !== "ok");
+    if (broken) {
+      console.warn(`[Watchdog] Detected degraded state — repairing (social=${snap.social.registered}, jobs=${snap.jobs.schedulerRunning}, db=${snap.db.jobsDb})`);
+      const actions = await health.repairWorkflows({ bot });
+      actions.forEach((a) => console.log(`[Watchdog] • ${a}`));
+    }
+  } catch (err) {
+    console.error("[Watchdog] error:", err.message);
+  }
+}, 10 * 60 * 1000).unref();
 
 // Chat reply is decoupled from the Telegram handler: we show a live typing
 // indicator and send the answer in the background. This keeps the polling loop
@@ -122,6 +158,42 @@ async function handleIncomingText(ctx, text) {
       jobsToggle.enabled
         ? `Job workflow is now ${jState} — ForChi will scan and prepare applications for matching jobs (still respecting dry-run / apply window / daily cap).`
         : `Job workflow is now ${jState} — ForChi will stop scanning jobs. Say "turn on the job workflow" to resume.`
+    );
+  }
+
+  // On-demand health diagnostics — "run diagnostics" / "what's wrong?" / "is everything ok?"
+  if (detectDiagRequest(text)) {
+    console.log(`[Diag] User ${ctx.from?.id} requested diagnostics`);
+    const snap = await health.getHealthSnapshot();
+    const s = snap.social;
+    const last = s.lastRun;
+    const lines = [
+      `🩺 *ForChi diagnostics* — ${snap.utc} UTC`,
+      `Uptime: ${Math.floor(snap.uptimeSec / 60)}m ${snap.uptimeSec % 60}s`,
+      `Auto mode: ${snap.autoMode === "on" ? "ON ✅" : "OFF ⛔"}`,
+      `Social scheduler: ${s.registered ? "registered ✅" : "MISSING ⛔"}${s.running ? " (run in progress)" : ""}`,
+      `Last auto post: ${last ? `${last.at} · FB ${last.fb} · LI ${last.li}` : "never yet"}`,
+      `Jobs mode: ${snap.jobsMode === "on" ? "ON ✅" : "OFF ⛔"}`,
+      `Jobs scheduler: ${snap.jobs.schedulerRunning ? "running ✅" : "NOT RUNNING ⛔"}`,
+      `Jobs DB: ${snap.db.jobsDb}`,
+    ];
+    if (snap.jobs.totalJobs != null) lines.push(`Jobs totals: seen ${snap.jobs.totalJobs} · applied ${snap.jobs.applied} · queued ${snap.jobs.pendingApply}`);
+    lines.push(`\nSay "fix the workflows" (or /fix) if anything looks broken.`);
+    return ctx.reply(lines.join("\n"), { parse_mode: "Markdown" });
+  }
+
+  // Repair request — "fix the workflows" / "fix the job workflow". ForChi runs
+  // the deterministic recovery (re-register schedulers, clear stuck flags,
+  // reconnect DB, re-enable auto mode) and reports exactly what it did.
+  if (detectRepairRequest(text)) {
+    console.log(`[Repair] User ${ctx.from?.id} requested workflow repair`);
+    const actions = await health.repairWorkflows({ bot });
+    const snap = await health.getHealthSnapshot();
+    return ctx.reply(
+      `🔧 *ForChi repair run:*\n` +
+      actions.map((a) => `• ${a}`).join("\n") +
+      `\n\nNow: auto mode ${snap.autoMode} · social ${snap.social.registered ? "registered ✅" : "MISSING ⛔"} · jobs ${snap.jobs.schedulerRunning ? "running ✅" : "NOT RUNNING ⛔"}`,
+      { parse_mode: "Markdown" }
     );
   }
 
