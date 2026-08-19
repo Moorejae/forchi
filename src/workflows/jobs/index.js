@@ -17,8 +17,12 @@ let appliesThisRun = 0;
 // FRESHNESS GATE: never apply to a role older than this (default 14 days).
 // Newly-posted roles (24h–2 weeks) are the target; anything older is stale.
 const MAX_AGE_DAYS = Number(process.env.JOBS_MAX_AGE_DAYS || 14);
-// Sources with a trusted auto-apply submitter.
-const AUTO_SOURCES = ["greenhouse", "lever", "workable", "ashby"];
+// Sources with a working auto-apply submitter. Greenhouse is EXCLUDED: it has
+// no public application-submission API (its embed form is reCAPTCHA-protected
+// and the boards-api .../application endpoint returns 404), so every greenhouse
+// auto-apply failed. Those roles now flow through the semi-auto email path
+// (apply link + tailored resume) so nothing is lost.
+const AUTO_SOURCES = ["lever", "workable", "ashby"];
 
 // Semi-auto matches (no trusted submitter) get emailed — one email per job
 // (link + cover letter + tailored resume PDF) for manual tap-through apply.
@@ -80,7 +84,7 @@ async function maybeSubmit(job, app) {
     return "prepared";
   }
   console.warn(`[Jobs] ❌ submit failed ${job.company} / ${job.title} — ${res.response}`);
-  await db.setJobStatus(job.id, "failed");
+  await db.markApplyError(job.id, res.response);
   return "failed";
 }
 

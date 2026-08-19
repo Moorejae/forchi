@@ -89,19 +89,59 @@ db.getDB()
 // Every 10 min, verify both workflows are alive. If the social scheduler is
 // unregistered, the jobs loop is down, or the jobs DB is unreachable, run the
 // deterministic repair automatically — so failures self-heal without waiting
-// for Victor to notice or type /fix.
+// for Victor to notice or type /fix. When something breaks, ForChi TELLS Victor:
+// it reports what broke + what it fixed, and escalates loudly if it couldn't
+// fix it — instead of Victor finding out first.
+let lastWatchdogNotify = null; // { at, sig } dedup so we don't spam every 10 min
+
+async function sendWatchdogNotice(text) {
+  const chatId = jobsNotify.getChatId();
+  if (!chatId) return false;
+  try {
+    await bot.telegram.sendMessage(chatId, text, { parse_mode: "Markdown" });
+    return true;
+  } catch (err) {
+    console.warn("[Watchdog] notify failed:", err.message);
+    return false;
+  }
+}
+
 setInterval(async () => {
   try {
     const snap = await health.getHealthSnapshot();
-    const broken =
-      !snap.social.registered ||
-      snap.jobs.schedulerRunning === false ||
-      (typeof snap.db.jobsDb === "string" && snap.db.jobsDb !== "ok");
-    if (broken) {
-      console.warn(`[Watchdog] Detected degraded state — repairing (social=${snap.social.registered}, jobs=${snap.jobs.schedulerRunning}, db=${snap.db.jobsDb})`);
-      const actions = await health.repairWorkflows({ bot });
-      actions.forEach((a) => console.log(`[Watchdog] • ${a}`));
+    const dbBad = typeof snap.db.jobsDb === "string" && snap.db.jobsDb !== "ok";
+    const broken = !snap.social.registered || snap.jobs.schedulerRunning === false || dbBad;
+    if (!broken) return;
+
+    // Issue signature so repeat occurrences of the SAME issue don't spam.
+    const sig = JSON.stringify([snap.social.registered, snap.jobs.schedulerRunning, dbBad ? snap.db.jobsDb : "ok"]);
+    const now = Date.now();
+    const cooldownMs = 60 * 60 * 1000; // re-notify same issue at most hourly
+    if (lastWatchdogNotify && lastWatchdogNotify.sig === sig && now - lastWatchdogNotify.at < cooldownMs) return;
+
+    console.warn(`[Watchdog] Detected degraded state — repairing (social=${snap.social.registered}, jobs=${snap.jobs.schedulerRunning}, db=${snap.db.jobsDb})`);
+    const actions = await health.repairWorkflows({ bot });
+    actions.forEach((a) => console.log(`[Watchdog] • ${a}`));
+
+    // Re-check after repair.
+    const after = await health.getHealthSnapshot();
+    const stillBroken =
+      !after.social.registered ||
+      after.jobs.schedulerRunning === false ||
+      (typeof after.db.jobsDb === "string" && after.db.jobsDb !== "ok");
+
+    const parts = [
+      `🩺 *ForChi self-heal* — I detected a problem and tried to fix it automatically.`,
+      `• Found: social=${snap.social.registered ? "ok" : "MISSING"}, jobs=${snap.jobs.schedulerRunning ? "ok" : "NOT RUNNING"}, jobs DB=${dbBad ? snap.db.jobsDb : "ok"}`,
+      ...actions.map((a) => `• ${a}`),
+    ];
+    if (stillBroken) {
+      parts.push(`\n⚠️ *Still broken after my repair* — please send /diag or "fix the workflows" so we can dig in.`);
+    } else {
+      parts.push(`\n✅ Everything is back up. No action needed from you.`);
     }
+    lastWatchdogNotify = { at: now, sig };
+    await sendWatchdogNotice(parts.join("\n"));
   } catch (err) {
     console.error("[Watchdog] error:", err.message);
   }

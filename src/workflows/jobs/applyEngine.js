@@ -405,7 +405,11 @@ async function submitApplication(job, app) {
 
   let resumeBuf;
   try {
-    resumeBuf = getResumeBuffer(app.resumeTailored);
+    // getResumeBuffer returns a Promise for the tailored-render path — MUST be
+    // awaited, else the ATS receives a Promise object instead of a PDF and
+    // rejects with "Resume file contents do not match the file extension".
+    // (This was the bug that made every auto-apply fail while emails worked.)
+    resumeBuf = await getResumeBuffer(app.resumeTailored);
   } catch (e) {
     return { ok: false, response: `Resume missing: ${e.message}` };
   }

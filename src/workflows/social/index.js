@@ -1,6 +1,7 @@
 const { postToFacebook } = require("./facebook");
 const { postToLinkedIn } = require("./linkedin");
 const { generateContentAndVisualTopic, generateFacebookPost, generateLinkedInPost, finalizePost } = require("../../llm/contentGen");
+const { generate } = require("../../llm/provider");
 const { detectImageMime } = require("./imageMime");
 const sharp = require("sharp");
 
@@ -29,13 +30,54 @@ function hfAuthHeaders(extra = {}) {
   return h;
 }
 
-function buildImagePrompt(topic, destination) {
-  const styleSuffix = {
-    facebook: "melancholic anime scenery, lo-fi digital painting, Makoto Shinkai style sky realism, painterly textured clouds with soft airbrushing and hard-edged rims, cel-shaded character, moody desaturated blues and slate grays, pale cerulean light breaking through, backlit cinematic lighting, atmospheric haze, introspective mood, high artistic fidelity",
-    linkedin: "cyberpunk mecha biomechanical concept art, matte white and surgical gray monochrome palette, heavily segmented armor plating with exposed hydraulic actuators and micro-wiring, floating dust particles, high-key overexposed bright background, dramatic studio rim lighting, octane render, photorealistic textures, ultra sharp focus, 8k"
-  }[destination] || "high quality digital illustration";
+// ── Platform house styles ────────────────────────────────────────────────────
+// Derived by Gemini VISION from Victor's two sample art images (2026-08-19):
+//   LinkedIn  = the cute chibi/pastel-mech sample (563018699347692.jpeg)
+//   Facebook  = the gritty ink/woodblock-print sample (LUCAS ALIGHIERI_.jpeg)
+// Each post then gets a UNIQUE topic-tuned variant of its house style via
+// buildTopicStylePrompt(), so images stay on-brand but never repeat.
+const BASE_STYLES = {
+  linkedin:
+    "2D digital vector illustration blending modern anime concept art with a clean sticker-graphic aesthetic. " +
+    "Desaturated pastel palette: off-white/cream, dusty periwinkle, slate blue, light cool-grey, with warm copper and soft peach accents. " +
+    "Clean dark-grey ink outlines, flat cel-shading with gentle smooth gradients, smooth matte non-reflective textures. " +
+    "Diffused soft ambient light with a soft-edged drop shadow. Cute chibi-style mechanical characters with oversized blocky heads and compact articulated limbs, centered full-body composition. " +
+    "Mood: gentle, retro-futuristic, cute, melancholic, minimalist. Style keywords: chibi, cel-shaded, soft mech, pastel sci-fi vector illustration.",
+  facebook:
+    "Hand-drawn digital ink illustration blending gritty seinen manga realism with traditional Japanese woodblock print aesthetics. " +
+    "Limited desaturated palette: dusty teal background, parchment cream garments, deep indigo-black hair, earth-tone mud brown and slate blue; high contrast but muted. " +
+    "Heavy expressive scratchy black ink linework with dense cross-hatching, stippling and pen shading. Distressed speckled paper texture with grit, fiber noise and subtle paint splatters. " +
+    "High-contrast graphic lighting with deep ink-black shadows, low-angle centered portrait of a single rugged character against a minimalist textured sky. " +
+    "Mood: melancholic, raw, nostalgic, determined. Style keywords: vagabond manga sketch, scratchy ink, distressed woodblock print, cross-hatching.",
+};
 
+function buildImagePrompt(topic, destination, styleOverride) {
+  const styleSuffix = styleOverride || BASE_STYLES[destination] || "high quality digital illustration";
   return `${topic}, ${styleSuffix}`;
+}
+
+// Make each post's art UNIQUE: Gemini fuses the platform's house style with the
+// post's topic into a fresh, topic-specific style prompt. Falls back to the
+// house style if the model is unavailable.
+async function buildTopicStylePrompt(topic, destination) {
+  const base = BASE_STYLES[destination];
+  if (!base || !topic) return base;
+  const prompt =
+    `We generate one AI image per social post and want each to have a UNIQUE art style that fits BOTH the platform's house style and the post's topic.\n\n` +
+    `HOUSE STYLE (${destination}): ${base}\n\n` +
+    `POST TOPIC: "${topic}"\n\n` +
+    `Write ONE concise image-generation style prompt (50-80 words) that keeps the house style's medium, palette and technique but adapts the subject matter, mood and details to the topic, so the image clearly conveys "${topic}" while still looking like the house style. Output ONLY the style prompt, no preamble.`;
+  try {
+    const out = await generate(prompt, { maxTokens: 200 });
+    let t = String(out || "").trim();
+    // The model sometimes wraps the answer as {"prompt": "..."} — unwrap it.
+    const jsonWrap = t.match(/^\s*\{[\s\S]*?"(?:prompt|style|text|output)"\s*:\s*"([\s\S]*?)"\s*\}\s*$/);
+    if (jsonWrap) t = jsonWrap[1].replace(/\\n/g, " ").replace(/\\"/g, '"').trim();
+    if (t.length > 20 && !/having a moment/i.test(t)) return t;
+  } catch (err) {
+    console.warn(`[Image API] Topic-style generation failed for ${destination}: ${err.message}`);
+  }
+  return base;
 }
 
 // ── High-quality hosted Space (radames SDXL-Lightning, 24/7, 1024x1024, ~6s) ──
@@ -253,7 +295,9 @@ async function run({ destinations = [], content = "", visualTopic = null }) {
   // 2. Parallel destination execution using Promise.allSettled (Section 4 Latency Budget & Independence)
   const tasks = destinations.map(async (dest) => {
     try {
-      const imagePrompt = buildImagePrompt(finalVisualTopic, dest);
+      // Each post gets a UNIQUE topic-tuned variant of the platform house style.
+      const topicStyle = await buildTopicStylePrompt(finalVisualTopic, dest);
+      const imagePrompt = buildImagePrompt(finalVisualTopic, dest, topicStyle);
       const rawImage = await generateImageWithFallback(imagePrompt);
       const imageBuffer = await normalizeImage(rawImage);
 
@@ -295,6 +339,8 @@ async function run({ destinations = [], content = "", visualTopic = null }) {
 module.exports = {
   run,
   buildImagePrompt,
+  buildTopicStylePrompt,
+  BASE_STYLES,
   generateImageWithFallback,
   generateHostedFLUXImage,
   generateHostedImage,

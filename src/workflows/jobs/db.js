@@ -306,6 +306,18 @@ async function countAppliedToday() {
   return row ? Number(row.c) : 0;
 }
 
+// Record WHY a submission failed so /jobs status and diagnostics can show the
+// real reason (previously the response was never stored — failures were opaque).
+async function markApplyError(jobId, response) {
+  const db = await getJobsDB();
+  try {
+    await db.run(`UPDATE applications SET response = ? WHERE job_id = ?`, [String(response || "").slice(0, 500), jobId]);
+  } catch (e) {
+    // applications row may not exist yet — fine, status still gets set
+  }
+  await setJobStatus(jobId, "failed");
+}
+
 async function countAppliedSince(iso) {
   const db = await getJobsDB();
   const row = await db.get(
@@ -396,6 +408,6 @@ async function getStats() {
 module.exports = {
   getJobsDB, insertJobs, getNewJobs, getJobsByStatus, getJobById,
   setJobStatus, setJobScore, storeApplication, getApplicationForJob,
-  hasApplied, markApplied, countAppliedToday, countAppliedSince, getApplied, getStats,
+  hasApplied, markApplied, markApplyError, countAppliedToday, countAppliedSince, getApplied, getStats,
   markEmailSent, hasEmailSent, countEmailsSent, hasSimilarHandled, expireStaleMatched,
 };
