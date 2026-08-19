@@ -193,14 +193,6 @@ src/
 
 ---
 
-## 9. Security Notes
-
-- **`lookhere.docx` in Downloads contains all credentials in plaintext — delete it.**
-- Tokens are added to Render env manually by Victor (best practice), never committed (`.env` is gitignored).
-- No secrets are hardcoded in code; HF Space tokens are set as Space secrets via API.
-
----
-
 ## 10. Next Steps / Recommendations
 
 1. **Verify first auto-post with new image styles** after next scheduled slot.

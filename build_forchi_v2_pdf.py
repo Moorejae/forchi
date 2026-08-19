@@ -122,7 +122,7 @@ def build():
     story.append(HRFlowable(width="100%", thickness=3, color=SECONDARY, spaceAfter=22))
     story.append(Paragraph("<b>Author:</b> Pair-programmed with Victor (Chiedozie Victor Agu)", meta_style))
     story.append(Paragraph("<b>System:</b> ForChi — Free 24/7 Telegram Social Media Automation Bot", meta_style))
-    story.append(Paragraph("<b>Date:</b> August 13, 2026", meta_style))
+    story.append(Paragraph("<b>Date:</b> August 19, 2026", meta_style))
     story.append(Paragraph("<b>Status:</b> LIVE & VERIFIED — all core services healthy", meta_style))
     story.append(Spacer(1, 30))
     box = Table([[Paragraph(
