@@ -193,6 +193,67 @@ src/
 
 ---
 
+## 9. Jobs Workflow — Autonomous Job Discovery & Application Agent
+
+**Status:** BUILT & LIVE (v3.2, 2026-08-18) — running on **constant auto** alongside the social workflow. ForChi now runs **TWO autonomous workflows**: (1) **Social** — "Fickle youth" Facebook posts + LinkedIn deep-dives, 5×/day; (2) **Jobs (this section)** — discovers remote roles matching Victor's real profile, scores them, writes human-sounding cover letters + tailored resumes, and **auto-applies** to trusted ATS portals. A Telegram digest of applications lands every day at **20:00 WAT**. Full detail lives in `ForChi_Jobs_Blueprint.md`.
+
+### Why it works
+- The major modern ATS — **Greenhouse, Lever, Workable, Ashby** — serve public postings **and** public application endpoints, so submissions can be made with a plain HTTP POST (multipart: resume PDF + fields + answers) like a human browser.
+- LinkedIn / Indeed / Upwork are bot-protected → used for **discovery only**, never automated submission.
+- Applications must sound like the human wrote them — the same "voice" discipline as the Facebook posts, but in Victor's **natural conversational register**, not poetry.
+- Cover letters must prove: **(a)** the JD was read (mirror its own terms), **(b)** the company is known (researched), **(c)** why they need someone like him (real projects mapped to their problems).
+
+### Module map (`src/workflows/jobs/`)
+```
+profile.js      # real profile: resume data, target roles, voice rules
+portfolio.js    # GROUNDING CORPUS: real facts from ForChi, Flamchi/Odonata, CLAY,
+                #   CloudVoid, Footchristo — every claim is sourced, never invented
+tailor.js       # per-job resume tailoring (ATS keyword-leading, real projects)
+db.js           # jobs + applications tables (SQLite or Postgres), never-apply-twice
+sources/        # greenhouse/lever/workable/ashby/remoteok/weworkremotely/linkedin/...
+matcher.js      # Gemini scores each job vs profile -> {score, apply, reason}
+researcher.js   # web-search company research (what they do, why they need you)
+writer.js       # HUMAN-VOICE cover letters + screening answers (the pillar)
+applyEngine.js  # trusted-ATS submit (multipart POST), pacing + caps + never-twice
+emailer.js      # semi-auto match emails (Resend HTTPS API; Render blocks SMTP)
+scheduler.js    # CONSTANT AUTO loop (every 30 min) + daily 20:00 WAT report
+```
+
+### Pipeline (5 stages)
+1. **DISCOVER** — 9 source channels (Greenhouse/Lever/Workable/Ashby boards, RemoteOK, WeWorkRemotely, Remotive, Jobicy, Arbeitnow, Himalayas, LinkedIn guest API); normalize → one shape; dedupe by `(company, title, url)`.
+2. **MATCH** — Gemini scores each new job against the real profile → strict JSON `{score, matched_skills, missing_skills, apply, reason}`; only `score >= 70` with `apply=true` proceed.
+3. **WRITE** — the researcher web-searches the company first, then the writer produces a tailored cover letter (proves JD read + company known + why him) and answers to every screening question, in Victor's real voice, grounded in the portfolio corpus (never fabricated).
+4. **APPLY** — trusted-ATS submit via the public application endpoint (multipart: real identity + tailored resume PDF + human answers). HARD RULE: never apply twice (unique index + pre-checks). Anti-spam: daily cap, apply window 07–19 UTC, pacing (~10 per 30-min scan).
+5. **NOTIFY** — daily report at **20:00 WAT** (19:00 UTC): applied in last 24h, totals, queued, skipped, emailed, source breakdown. Controls: `/jobs status`, `/jobs queue`, `/jobs applied`, `/jobs notify`, `/jobs stop` (safety kill-switch).
+
+### Scheduler — CONSTANT AUTO (separate from social)
+- Always-on scan+apply loop every **30 min** (`JOBS_SCAN_INTERVAL_MIN`), no manual apply trigger. Freshness gate: roles **> 14 days old are never applied to** (`JOBS_MAX_AGE_DAYS`). Independent persisted state (`data/jobs_mode.json`); only `/jobs stop`/`/jobs start` control it.
+
+### Sources — auto vs semi-auto
+| Source | Type | Auto-apply? |
+|---|---|---|
+| Greenhouse / Lever (48 named cos: OpenAI, Stripe, Anthropic, Zapier, Render, Vercel, Databricks…) | ATS boards | ✅ auto |
+| Workable / Ashby | ATS boards | ✅ auto |
+| RemoteOK, WeWorkRemotely | remote boards | manual (semi-auto → email) |
+| Remotive, Jobicy, Arbeitnow, Himalayas | free JSON APIs | manual (semi-auto → email) |
+| LinkedIn (guest jobs API) | public search | manual (semi-auto → email) unless upgraded to ATS |
+
+### v3.2 highlights (2026-08-18)
+- **LinkedIn → ATS auto-apply:** if a LinkedIn job also lives on a company Greenhouse/Lever/Ashby/Workable board, it's rewritten to that source and auto-applied (strict company guard + title-verified board API resolution; ~4/15 upgraded per scan).
+- **Semi-auto emails:** every semi-auto match sends one email per job (apply link + tailored cover letter in body + tailored resume PDF) via **Resend HTTPS API** (Render blocks ALL outbound SMTP — verified). Never double-emails (`emails` table, `job_id` UNIQUE).
+- **Postgres persistence:** `JOBS_DATABASE_URL` (Neon/Supabase) survives redeploys; SQLite stays the zero-config default.
+
+### Honesty policy
+- **WILL:** tailor the real resume per job, ground every claim in the real portfolio corpus, skip jobs where the real gap is too large.
+- **WON'T:** fabricate employers, titles, years, or credentials (the one thing that gets offers rescinded). Identity fields are real (from the resume).
+
+### Status & hard lessons (2026-08-19)
+- **Auto-apply fix (the "0 applied" root cause):** `submitApplication` was calling `getResumeBuffer()` **without `await`** — it returns a Promise (pdfkit render), so every submission uploaded a Promise object as the resume and every ATS rejected it ("Resume file contents do not match the file extension") → 21 jobs marked failed, **0 applied, ever**. Now awaited; emails worked only because the email path awaited it.
+- **Greenhouse reclassified to semi-auto (email):** it has **no public application-submit API** (`boards-api .../application` → 404; bare → 401) and its embed form is **reCAPTCHA-protected**, so greenhouse auto-apply is impossible over HTTP. Lever/Workable/Ashby remain auto sources (Lever endpoint verified to accept the rendered PDF).
+- Verified live: discovery ~1,223 raw jobs/pass, matcher/writer/tailor produce real cover letters + one-page PDFs, daily report + `/jobs` commands working, Postgres connected via the crash-proof client.
+
+---
+
 ## 10. Next Steps / Recommendations
 
 1. **Verify first auto-post with new image styles** after next scheduled slot.
