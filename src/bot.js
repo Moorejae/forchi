@@ -274,7 +274,7 @@ async function handleIncomingText(ctx, text) {
       : "No YouTube token yet — approve once and I'll handle it from there.";
     const url = authWatch.consentUrl() || "couldn't build URL (check YOUTUBE_CLIENT_ID / YOUTUBE_CALLBACK_URL)";
     return ctx.reply(
-      `${head}\n\n${url}\n\nApprove → *Advanced* → "Go to forchi.onrender.com (unsafe)" → *Allow*. You'll land on the green connected page.`,
+      `${head}\n\n\`${url}\`\n\nApprove → *Advanced* → "Go to forchi.onrender.com (unsafe)" → *Allow*. You'll land on the green connected page.`,
       { parse_mode: "Markdown" }
     );
   }

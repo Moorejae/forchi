@@ -74,7 +74,7 @@ function buildConsentMessage(why) {
   return (
     `🎬 *ForChi YouTube — action needed*\n\n` +
     `${why}\n\n` +
-    `👉 *Click to authorize* (signed in as aguswigad@gmail.com — @sirxlud):\n${link}\n\n` +
+    `👉 *Click to authorize* (signed in as aguswigad@gmail.com — @sirxlud):\n\`${link}\`\n\n` +
     `Then: *Allow* → if you see "Google hasn't verified this app" click *Advanced* → *Go to forchi.onrender.com (unsafe)* → *Allow*. You'll land on the green "ForChi is connected to YouTube" page — I'll take it from there.`
   );
 }
