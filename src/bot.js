@@ -20,6 +20,8 @@ const jobsScheduler = require("./workflows/jobs/scheduler");
 const { registerJobsCommands } = require("./workflows/jobs/commands");
 const jobsMode = require("./workflows/jobs/jobsMode");
 const jobsNotify = require("./workflows/jobs/notifyTarget");
+const videoWorkflow = require("./workflows/video/index");
+const videoScheduler = require("./workflows/video/scheduler");
 
 // Force IPv4 for DNS resolution (avoids IPv6 timeouts in containers)
 if (dns.setDefaultResultOrder) dns.setDefaultResultOrder("ipv4first");
@@ -70,8 +72,8 @@ bot.start((ctx) => {
   jobsNotify.setChatId(ctx.chat && ctx.chat.id);
   return ctx.reply(
     "Hey Victor — I'm ForChi, your personal workflow agent.\n\n" +
-    "I post to Facebook & LinkedIn (5x/day), answer voice notes, search the web, and run ForChi Jobs — discovering and applying to matching remote roles for you.\n\n" +
-    "Try: /jobs · \"show me the jobs report\" · \"turn on the job workflow\" · or just talk to me."
+    "I post to Facebook & LinkedIn (5x/day), answer voice notes, search the web, run ForChi Jobs, and manage the YouTube Shorts channel (@sirxlud) — writing, voicing and posting Victor Moore poetry with AI instrumentals.\n\n" +
+    "Try: /jobs · \"show me the jobs report\" · \"video status\" · \"turn on the video workflow\" · \"post a video now\" · or just talk to me."
   );
 });
 registerJobsCommands(bot);
@@ -82,6 +84,7 @@ db.getDB()
   .then(() => {
     initScheduler();
     jobsScheduler.startJobsScheduler({ bot });
+    videoScheduler.initVideoScheduler({ notify: (t) => jobsNotify.sendMessage(t) });
   })
   .catch((err) => console.error("[DB Error]", err.message));
 
@@ -110,17 +113,18 @@ setInterval(async () => {
   try {
     const snap = await health.getHealthSnapshot();
     const dbBad = typeof snap.db.jobsDb === "string" && snap.db.jobsDb !== "ok";
-    const broken = !snap.social.registered || snap.jobs.schedulerRunning === false || dbBad;
+    const videoBroken = snap.video.enabled && !snap.video.registered;
+    const broken = !snap.social.registered || snap.jobs.schedulerRunning === false || dbBad || videoBroken;
     if (!broken) return;
 
     // Issue signature so repeat occurrences of the SAME issue don't spam.
-    const sig = JSON.stringify([snap.social.registered, snap.jobs.schedulerRunning, dbBad ? snap.db.jobsDb : "ok"]);
+    const sig = JSON.stringify([snap.social.registered, snap.jobs.schedulerRunning, dbBad ? snap.db.jobsDb : "ok", videoBroken]);
     const now = Date.now();
     const cooldownMs = 60 * 60 * 1000; // re-notify same issue at most hourly
     if (lastWatchdogNotify && lastWatchdogNotify.sig === sig && now - lastWatchdogNotify.at < cooldownMs) return;
 
-    console.warn(`[Watchdog] Detected degraded state — repairing (social=${snap.social.registered}, jobs=${snap.jobs.schedulerRunning}, db=${snap.db.jobsDb})`);
-    const actions = await health.repairWorkflows({ bot });
+    console.warn(`[Watchdog] Detected degraded state — repairing (social=${snap.social.registered}, jobs=${snap.jobs.schedulerRunning}, db=${snap.db.jobsDb}, video=${snap.video.registered ? "ok" : videoBroken ? "MISSING" : "off"})`);
+    const actions = await health.repairWorkflows({ bot, notify: (t) => jobsNotify.sendMessage(t) });
     actions.forEach((a) => console.log(`[Watchdog] • ${a}`));
 
     // Re-check after repair.
@@ -128,11 +132,12 @@ setInterval(async () => {
     const stillBroken =
       !after.social.registered ||
       after.jobs.schedulerRunning === false ||
-      (typeof after.db.jobsDb === "string" && after.db.jobsDb !== "ok");
+      (typeof after.db.jobsDb === "string" && after.db.jobsDb !== "ok") ||
+      (after.video.enabled && !after.video.registered);
 
     const parts = [
       `🩺 *ForChi self-heal* — I detected a problem and tried to fix it automatically.`,
-      `• Found: social=${snap.social.registered ? "ok" : "MISSING"}, jobs=${snap.jobs.schedulerRunning ? "ok" : "NOT RUNNING"}, jobs DB=${dbBad ? snap.db.jobsDb : "ok"}`,
+      `• Found: social=${snap.social.registered ? "ok" : "MISSING"}, jobs=${snap.jobs.schedulerRunning ? "ok" : "NOT RUNNING"}, jobs DB=${dbBad ? snap.db.jobsDb : "ok"}, video=${after.video.enabled && snap.video.registered ? "ok" : "MISSING"}`,
       ...actions.map((a) => `• ${a}`),
     ];
     if (stillBroken) {
@@ -199,6 +204,56 @@ async function handleIncomingText(ctx, text) {
         ? `Job workflow is now ${jState} — ForChi will scan and prepare applications for matching jobs (still respecting dry-run / apply window / daily cap).`
         : `Job workflow is now ${jState} — ForChi will stop scanning jobs. Say "turn on the job workflow" to resume.`
     );
+  }
+
+  // Video-workflow toggle — "turn on/off the video workflow" / "activate/deactivate the video pipeline".
+  const vidOn = /(turn|switch|set|activate|start)\s+(on|up)\b.*(video|shorts|youtube|poem)/i.test(text) ||
+    /(video|shorts|youtube|poem)\s+workflow\s+(on|up)/i.test(text);
+  const vidOff = /(turn|switch|set|deactivate|stop)\s+(off|down)\b.*(video|shorts|youtube|poem)/i.test(text) ||
+    /(video|shorts|youtube|poem)\s+workflow\s+(off|down)/i.test(text);
+  if (vidOn || vidOff) {
+    videoWorkflow.setEnabled(vidOn);
+    const vState = videoWorkflow.getVideoState().enabled ? "ON ✅" : "OFF ⛔";
+    console.log(`[VideoMode] User ${ctx.from?.id} set video workflow ${vidOn ? "ON" : "OFF"}`);
+    return ctx.reply(
+      vidOn
+        ? `Video workflow is now ${vState} — ForChi will write, voice and post Victor Moore Shorts with random 15-50 min human-like spacing. Say "video status" to check, or "post a video now" for an immediate one.`
+        : `Video workflow is now ${vState} — ForChi will stop auto-posting Shorts. You can still say "post a video now" anytime.`
+    );
+  }
+
+  // Video status — "video status" / "shorts status" / "youtube status".
+  if (/(video|shorts|youtube)\s+(status|report|state)/i.test(text)) {
+    const vs = videoWorkflow.getVideoState();
+    const lines = [
+      `🎬 *ForChi video workflow*`,
+      `Enabled: ${vs.enabled ? "ON ✅" : "OFF ⛔"}`,
+      `Scheduler: ${videoScheduler.getSchedulerState().registered ? "registered ✅" : "MISSING ⛔"}`,
+      vs.lastPost
+        ? `Last Short: ${vs.lastPost.at} · topic: ${vs.lastPost.topic}\n${vs.lastPost.url}`
+        : `Last Short: never yet`,
+      vs.nextScheduled ? `Next Short: ~${vs.nextScheduled} UTC` : `Next Short: not scheduled`,
+      vs.totalPosts ? `Total posts: ${vs.totalPosts}` : `Total posts: 0`,
+      vs.lastError ? `⚠️ Last error: ${vs.lastError.message}` : ``,
+      vs.consecutiveFailures ? `Consecutive failures: ${vs.consecutiveFailures}` : ``,
+    ].filter(Boolean);
+    return ctx.reply(lines.join("\n"), { parse_mode: "Markdown" });
+  }
+
+  // Post a video NOW — "post a video now" / "push a video" / "make a short".
+  if (/(post|push|make|create)\s+(a\s+)?(video|short|poem)\s*(now|right now|immediately)?/i.test(text)) {
+    console.log(`[Video] User ${ctx.from?.id} requested an immediate Short`);
+    await ctx.reply("🎬 On it — writing, voicing and assembling your Short now (takes a few minutes).");
+    videoWorkflow.runOnce({ notify: (t) => jobsNotify.sendMessage(t) })
+      .then(async (post) => {
+        if (post && post.url) await ctx.reply(`✅ Short is live: ${post.url}`);
+        else if (post && post.skipped) await ctx.reply("A Short is already being made — one moment.");
+        else await ctx.reply("⚠️ The Short couldn't be published. Check /diag or \"video status\".");
+      })
+      .catch(async (err) => {
+        await ctx.reply(`⚠️ Short failed: ${err.message}`);
+      });
+    return;
   }
 
   // On-demand health diagnostics — "run diagnostics" / "what's wrong?" / "is everything ok?"
@@ -324,9 +379,42 @@ bot.on("voice", async (ctx) => {
 // ── HTTP Health Check Server ──────────────────────────────────────────────────
 const PORT = process.env.PORT || 7860;
 const server = http.createServer((req, res) => {
+  const pathname = (req.url || "/").split("?")[0];
+
+  // YouTube OAuth callback: Google redirects here after the owner approves.
+  // We exchange the code, persist the refresh token (locally + as a Render env
+  // var so it survives redeploys), and show a success page — one click, no copy-paste.
+  if (pathname === "/oauth2callback") {
+    const code = new URL(req.url, "http://localhost").searchParams.get("code") || "";
+    const { handleOauthCallback, saveRefreshToken } = require("./workflows/video/youtube.js");
+    handleOauthCallback(code)
+      .then(async (tokens) => {
+        // persist to Render env vars (survives redeploys) if RENDER_API_KEY present
+        if (process.env.RENDER_API_KEY) {
+          try {
+            const { setRenderEnvVar } = require("./workflows/video/renderEnv.js");
+            await setRenderEnvVar("YOUTUBE_REFRESH_TOKEN", tokens.refresh_token);
+          } catch (e) {
+            console.error("[OAuth] render env persist failed:", e.message);
+          }
+        }
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(
+          "<h2 style='font-family:sans-serif'>✅ ForChi is connected to YouTube!</h2>" +
+          "<p style='font-family:sans-serif'>Your channel is authorized. You can close this tab — ForChi will start posting Shorts.</p>"
+        );
+        console.log("[OAuth] YouTube authorization saved successfully.");
+      })
+      .catch((err) => {
+        console.error("[OAuth] callback error:", err.message);
+        res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(`<h2 style='font-family:sans-serif'>Authorization failed</h2><p style='font-family:sans-serif'>${err.message}</p>`);
+      });
+    return;
+  }
+
   res.writeHead(200, { "Content-Type": "application/json" });
-  const path = (req.url || "/").split("?")[0];
-  if (path === "/status") {
+  if (pathname === "/status") {
     res.end(JSON.stringify({
       status: "healthy",
       bot: "ForChi",

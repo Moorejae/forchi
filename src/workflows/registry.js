@@ -1,7 +1,9 @@
 const socialWorkflow = require("./social/index");
+const videoWorkflow = require("./video/index");
 
 const WORKFLOW_REGISTRY = {
-  social: socialWorkflow
+  social: socialWorkflow,
+  video: videoWorkflow,
 };
 
 function getWorkflow(name = "social") {
@@ -14,5 +16,6 @@ function getWorkflow(name = "social") {
 
 module.exports = {
   social: socialWorkflow,
+  video: videoWorkflow,
   getWorkflow
 };

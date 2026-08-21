@@ -20,6 +20,8 @@ const socialScheduler = require("./jobs"); // the 5x/day social scheduler
 const jobsMode = require("../workflows/jobs/jobsMode");
 const jobsScheduler = require("../workflows/jobs/scheduler");
 const jobsDb = require("../workflows/jobs/db");
+const videoWorkflow = require("../workflows/video/index");
+const videoScheduler = require("../workflows/video/scheduler");
 
 const bootTime = Date.now();
 
@@ -40,6 +42,15 @@ async function getHealthSnapshot() {
     jobs: {
       schedulerRunning: jobsScheduler.isJobsSchedulerRunning(),
     },
+    video: {
+      enabled: videoWorkflow.getVideoState().enabled,
+      registered: videoScheduler.getSchedulerState().registered,
+      lastPost: videoWorkflow.getVideoState().lastPost,
+      lastError: videoWorkflow.getVideoState().lastError,
+      nextScheduled: videoWorkflow.getVideoState().nextScheduled,
+      totalPosts: videoWorkflow.getVideoState().totalPosts,
+      consecutiveFailures: videoWorkflow.getVideoState().consecutiveFailures,
+    },
     db: { jobsDb: "unknown" },
   };
 
@@ -58,7 +69,7 @@ async function getHealthSnapshot() {
 
 // ── Repair ──────────────────────────────────────────────────────────────────
 // Deterministic recovery actions. Reports what was found + what it fixed.
-async function repairWorkflows({ bot } = {}) {
+async function repairWorkflows({ bot, notify } = {}) {
   const actions = [];
 
   // 1. Auto mode: /fix is an explicit "make it work again" intent → force ON.
@@ -83,6 +94,14 @@ async function repairWorkflows({ bot } = {}) {
   jobsScheduler.startJobsScheduler({ bot });
   actions.push("jobs scheduler restarted");
 
+  // 3b. Video workflow: re-enable + re-register its jitter scheduler.
+  if (!videoWorkflow.getVideoState().enabled) {
+    videoWorkflow.setEnabled(true);
+    actions.push("video workflow was OFF → turned back ON");
+  }
+  videoScheduler.reRegister({ notify });
+  actions.push("video scheduler re-registered");
+
   // 4. Jobs DB: force a reconnect-aware health check.
   try {
     const s = await jobsDb.getStats();
@@ -101,12 +120,18 @@ function registerHealthCommands(bot) {
     const snap = await getHealthSnapshot();
     const s = snap.social;
     const last = s.lastRun;
+    const v = snap.video;
+    const vLast = v.lastPost;
+    const vErr = v.lastError;
     const lines = [
       `🩺 *ForChi diagnostics* — ${snap.utc} UTC`,
       `Uptime: ${Math.floor(snap.uptimeSec / 60)}m ${snap.uptimeSec % 60}s`,
       `Auto mode: ${snap.autoMode === "on" ? "ON ✅" : "OFF ⛔"}`,
       `Social scheduler: ${s.registered ? "registered ✅" : "MISSING ⛔"}${s.running ? " (run in progress)" : ""}`,
       `Last auto post: ${last ? `${last.at} · FB ${last.fb} · LI ${last.li}` : "never yet"}`,
+      `Video workflow: ${v.enabled ? "ON ✅" : "OFF ⛔"} · scheduler ${v.registered ? "registered ✅" : "MISSING ⛔"}`,
+      `Last Short: ${vLast ? `${vLast.at} · ${vLast.topic} · ${vLast.url}` : "never yet"}${v.totalPosts ? ` (${v.totalPosts} total)` : ""}`,
+      vErr ? `⚠️ Last video error: ${vErr.message}` : `Next Short: ${v.nextScheduled ? v.nextScheduled : "not scheduled"}`,
       `Jobs mode: ${snap.jobsMode === "on" ? "ON ✅" : "OFF ⛔"}`,
       `Jobs scheduler: ${snap.jobs.schedulerRunning ? "running ✅" : "NOT RUNNING ⛔"}`,
       `Jobs DB: ${snap.db.jobsDb}`,
@@ -118,12 +143,13 @@ function registerHealthCommands(bot) {
 
   // /fix — run the deterministic repair and report what it did.
   bot.command("fix", async (ctx) => {
-    const actions = await repairWorkflows({ bot });
+    const { notifyTarget } = require("../workflows/jobs/notifyTarget");
+    const actions = await repairWorkflows({ bot, notify: (t) => notifyTarget.sendMessage(t) });
     const snap = await getHealthSnapshot();
     return ctx.reply(
       `🔧 *ForChi repair run:*\n` +
       actions.map((a) => `• ${a}`).join("\n") +
-      `\n\nNow: auto mode ${snap.autoMode} · social ${snap.social.registered ? "registered ✅" : "MISSING ⛔"} · jobs ${snap.jobs.schedulerRunning ? "running ✅" : "NOT RUNNING ⛔"}`,
+      `\n\nNow: auto mode ${snap.autoMode} · social ${snap.social.registered ? "registered ✅" : "MISSING ⛔"} · jobs ${snap.jobs.schedulerRunning ? "running ✅" : "NOT RUNNING ⛔"} · video ${snap.video.enabled ? "ON ✅" : "OFF ⛔"}`,
       { parse_mode: "Markdown" }
     );
   });
