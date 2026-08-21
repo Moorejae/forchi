@@ -23,6 +23,8 @@ const KEYWORDS = [
   "contractor",
   "freelance",
   "global remote",
+  "Internship",
+  "Junior",
 ];
 const MAX_CARDS = 40; // cards parsed per scan
 const MAX_DESC_FETCH = 10; // posting pages to fetch for description

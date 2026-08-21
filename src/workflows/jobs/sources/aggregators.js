@@ -22,6 +22,7 @@ const KEEP = [
   "automation", "python", "node", "sre", "platform engineer",
   "contractor", "freelance", "contract", "global remote",
   "infrastructure", "data engineer", "software engineer", "software developer",
+  "intern", "internship", "junior", "entry level", "graduate",
   "aws", "azure", "gcp", "kubernetes", "docker", "terraform",
 ];
 

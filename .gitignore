@@ -32,12 +32,6 @@ tools/test_pollinations.py
 tools/test_gemini_audio.py
 tools/create_img_space.py
 *.pdf
-# The jobs agent needs the base resume bundled for the deploy, so un-ignore it:
-!data/resume/
-!data/resume/*.pdf
-# Carlito fonts bundled for the tailored-resume PDF (must ship with the deploy):
-!data/fonts/
-!data/fonts/*.ttf
 # Jobs runtime DB — local data, not source:
 data/jobs.db
 # Jobs runtime state (chat target, on/off) — ephemeral, not source:
@@ -54,4 +48,12 @@ __pycache__/
 *.pyc
 *.zip
 .DS_Store
-data/
+# Ignore everything inside data/ EXCEPT the resume + fonts the jobs agent needs
+# bundled for the deploy. The negations MUST come after data/* or the ignore rule
+# wins — this ordering bug kept the resume out of the deployed image and made every
+# auto-apply fail with "Resume PDF not found".
+data/*
+!data/resume/
+!data/resume/*.pdf
+!data/fonts/
+!data/fonts/*.ttf
