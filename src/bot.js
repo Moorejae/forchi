@@ -22,6 +22,7 @@ const jobsMode = require("./workflows/jobs/jobsMode");
 const jobsNotify = require("./workflows/jobs/notifyTarget");
 const videoWorkflow = require("./workflows/video/index");
 const videoScheduler = require("./workflows/video/scheduler");
+const authWatch = require("./workflows/video/authWatch");
 
 // Force IPv4 for DNS resolution (avoids IPv6 timeouts in containers)
 if (dns.setDefaultResultOrder) dns.setDefaultResultOrder("ipv4first");
@@ -85,6 +86,7 @@ db.getDB()
     initScheduler();
     jobsScheduler.startJobsScheduler({ bot });
     videoScheduler.initVideoScheduler({ notify: (t) => jobsNotify.sendMessage(t) });
+    authWatch.startAuthWatch({ notify: (t) => jobsNotify.sendMessage(t) });
   })
   .catch((err) => console.error("[DB Error]", err.message));
 
@@ -225,10 +227,17 @@ async function handleIncomingText(ctx, text) {
   // Video status — "video status" / "shorts status" / "youtube status".
   if (/(video|shorts|youtube)\s+(status|report|state)/i.test(text)) {
     const vs = videoWorkflow.getVideoState();
+    const ya = authWatch.getAuthState();
+    const authLine = ya.tokenPresent
+      ? (ya.hoursLeft != null
+        ? `token ✅ · expires ~${Math.max(0, Math.floor(ya.hoursLeft / 24))}d ${Math.max(0, ya.hoursLeft % 24)}h · say "youtube auth" to re-link anytime`
+        : "token ✅")
+      : `MISSING ⛔ — say "youtube auth" to get the approve link`;
     const lines = [
       `🎬 *ForChi video workflow*`,
       `Enabled: ${vs.enabled ? "ON ✅" : "OFF ⛔"}`,
       `Scheduler: ${videoScheduler.getSchedulerState().registered ? "registered ✅" : "MISSING ⛔"}`,
+      `YouTube auth: ${authLine}`,
       vs.lastPost
         ? `Last Short: ${vs.lastPost.at} · topic: ${vs.lastPost.topic}\n${vs.lastPost.url}`
         : `Last Short: never yet`,
@@ -238,6 +247,21 @@ async function handleIncomingText(ctx, text) {
       vs.consecutiveFailures ? `Consecutive failures: ${vs.consecutiveFailures}` : ``,
     ].filter(Boolean);
     return ctx.reply(lines.join("\n"), { parse_mode: "Markdown" });
+  }
+
+  // YouTube auth link on demand — "youtube auth" / "youtube authorize" / "yt link".
+  if (/(youtube|yt)\s+(auth|authorize|link|re-auth|relink)/i.test(text) || /auth\s+(link|url|youtube)/i.test(text)) {
+    const ya = authWatch.getAuthState();
+    const head = ya.tokenPresent
+      ? (ya.hoursLeft != null
+        ? `Your YouTube token is live — re-approve now to renew it before it expires (~${Math.max(0, Math.floor(ya.hoursLeft / 24))}d ${Math.max(0, ya.hoursLeft % 24)}h left).`
+        : "Your YouTube token is live — you can re-approve anytime.")
+      : "No YouTube token yet — approve once and I'll handle it from there.";
+    const url = authWatch.consentUrl() || "couldn't build URL (check YOUTUBE_CLIENT_ID / YOUTUBE_CALLBACK_URL)";
+    return ctx.reply(
+      `${head}\n\n${url}\n\nApprove → *Advanced* → "Go to forchi.onrender.com (unsafe)" → *Allow*. You'll land on the green connected page.`,
+      { parse_mode: "Markdown" }
+    );
   }
 
   // Post a video NOW — "post a video now" / "push a video" / "make a short".
@@ -394,6 +418,7 @@ const server = http.createServer((req, res) => {
           try {
             const { setRenderEnvVar } = require("./workflows/video/renderEnv.js");
             await setRenderEnvVar("YOUTUBE_REFRESH_TOKEN", tokens.refresh_token);
+            await setRenderEnvVar("YOUTUBE_AUTHED_AT", String(Date.now()));
           } catch (e) {
             console.error("[OAuth] render env persist failed:", e.message);
           }

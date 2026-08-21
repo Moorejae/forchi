@@ -55,16 +55,27 @@ async function refreshAccess() {
 }
 
 // Exchange an authorization code and persist the refresh token to .env.
+// The .env write is BEST-EFFORT: in the Render container there is no /app/.env
+// (env vars only), so we must never throw here — the caller persists to Render
+// env vars separately, and recordAuth keeps the 7-day re-auth clock.
 async function saveRefreshToken(token) {
-  const envPath = path.join(__dirname, "..", "..", "..", ".env");
-  let env = fs.readFileSync(envPath, "utf8");
-  const line = `YOUTUBE_REFRESH_TOKEN=${token}\n`;
-  if (env.includes("YOUTUBE_REFRESH_TOKEN=")) {
-    env = env.replace(/^#?\s*YOUTUBE_REFRESH_TOKEN=.*$/m, line.trim());
-  } else {
-    env += "\n" + line;
+  try {
+    const envPath = path.join(__dirname, "..", "..", "..", ".env");
+    let env = "";
+    try { env = fs.readFileSync(envPath, "utf8"); } catch (e) { env = ""; }
+    const line = `YOUTUBE_REFRESH_TOKEN=${token}\n`;
+    if (env.includes("YOUTUBE_REFRESH_TOKEN=")) {
+      env = env.replace(/^#?\s*YOUTUBE_REFRESH_TOKEN=.*$/m, line.trim());
+    } else {
+      env = (env.trimEnd() ? env.trimEnd() + "\n" : "") + line;
+    }
+    fs.writeFileSync(envPath, env);
+  } catch (e) {
+    // container has no writable .env — that's fine, caller persists via Render env vars
+    console.warn("[youtube] saveRefreshToken: no writable .env (container?) — persisting via Render env vars:", e.message);
   }
-  fs.writeFileSync(envPath, env);
+  // record the auth clock for the 7-day re-auth watcher (lazy require avoids a cycle)
+  try { require("./authWatch.js").recordAuth(token); } catch (e) { /* non-fatal */ }
   return true;
 }
 
