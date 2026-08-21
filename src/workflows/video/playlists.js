@@ -63,15 +63,19 @@ async function listPlaylists(token, maxResults = 50) {
 
 // Add an existing video to a playlist.
 async function addVideoToPlaylist(token, playlistId, videoId) {
-  await ytJson("https://www.googleapis.com/youtube/v3/playlistItems?part=snippet", {
-    method: "POST",
-    body: {
-      snippet: {
-        playlistId,
-        resourceId: { kind: "youtube#video", videoId },
+  await ytJson(
+    token,
+    "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet",
+    {
+      method: "POST",
+      body: {
+        snippet: {
+          playlistId,
+          resourceId: { kind: "youtube#video", videoId },
+        },
       },
-    },
-  });
+    }
+  );
   return true;
 }
 
