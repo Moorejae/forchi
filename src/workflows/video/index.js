@@ -84,6 +84,38 @@ function nextTopic() {
   return TOPICS[posts.length % TOPICS.length];
 }
 
+// Storage hygiene: once a Short is uploaded + recorded, delete the created
+// video/audio/temp so the disk (VPS/local) never accumulates rendered files.
+// Only per-run artifacts are removed — the shared clip library (media/clips),
+// instrumental music (.instrumental) and voice refs are always kept.
+function cleanupRunFiles(name, run) {
+  const targets = [];
+  if (run && run.output) targets.push(run.output);
+  targets.push(path.join(RUNS_DIR, name + ".mp3"));
+  targets.push(path.join(RUNS_DIR, name + "_run.json"));
+  targets.push(path.join(RUNS_DIR, name + "_parts"));
+  for (const t of targets) {
+    try {
+      if (!fs.existsSync(t)) continue;
+      if (fs.lstatSync(t).isDirectory()) fs.rmSync(t, { recursive: true, force: true });
+      else fs.unlinkSync(t);
+      console.log("[video] cleaned", t);
+    } catch (e) {
+      console.warn("[video] cleanup skip:", e.message);
+    }
+  }
+  // assembler intermediates (all regenerable)
+  const build = path.join(RUNS_DIR, "assemble_build");
+  try {
+    if (fs.existsSync(build)) {
+      for (const f of fs.readdirSync(build)) fs.rmSync(path.join(build, f), { recursive: true, force: true });
+      console.log("[video] cleaned assemble_build intermediates");
+    }
+  } catch (e) {
+    console.warn("[video] assemble_build cleanup skip:", e.message);
+  }
+}
+
 // ── One full video cycle ───────────────────────────────────────────────────
 async function runOnce({ notify } = {}) {
   if (state.running) return { skipped: "already running" };
@@ -148,6 +180,8 @@ async function runOnce({ notify } = {}) {
     savePosts(posts);
     state.lastPost = post;
     state.consecutiveFailures = 0;
+    // Upload is done + recorded — remove the created video/audio/temp files.
+    cleanupRunFiles(name, run);
     if (notify) notify(`🎬 *New Short live* — ${title}\n${uploaded.url}\nTopic: ${topic}`);
     return post;
   } catch (err) {
