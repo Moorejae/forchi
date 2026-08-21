@@ -42,10 +42,12 @@ async function exchangeCode(code) {
 }
 
 async function refreshAccess() {
+  const token = await require("./tokenStore.js").getToken();
+  if (!token) throw new Error("no YouTube refresh token yet (approve via 'youtube auth' in the bot)");
   const body = new URLSearchParams({
     client_id: CLIENT_ID,
     client_secret: CLIENT_SECRET,
-    refresh_token: REFRESH_TOKEN,
+    refresh_token: token,
     grant_type: "refresh_token",
   });
   const res = await fetch(TOKEN_URL, { method: "POST", body });
@@ -71,11 +73,14 @@ async function saveRefreshToken(token) {
     }
     fs.writeFileSync(envPath, env);
   } catch (e) {
-    // container has no writable .env — that's fine, caller persists via Render env vars
-    console.warn("[youtube] saveRefreshToken: no writable .env (container?) — persisting via Render env vars:", e.message);
+    // container has no writable .env — that's fine, we persist durably instead
+    console.warn("[youtube] saveRefreshToken: no writable .env (container?) — using durable tokenStore:", e.message);
   }
   // record the auth clock for the 7-day re-auth watcher (lazy require avoids a cycle)
-  try { require("./authWatch.js").recordAuth(token); } catch (e) { /* non-fatal */ }
+  try { require("./authWatch.js").recordAuth(token).catch(() => {}); } catch (e) { /* non-fatal */ }
+  // durable persistence (jobs DB kv) so the token survives redeploys WITHOUT the
+  // dangerous Render bulk env-var PUT (which wipes secrets the API GET hides)
+  try { await require("./tokenStore.js").setToken(token); } catch (e) { /* non-fatal */ }
   return true;
 }
 

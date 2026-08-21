@@ -67,6 +67,21 @@ const bot = new Telegraf(token, {
   },
 });
 
+// Glue: jobsNotify is shared across workflows but its module only exports
+// getChatId/setChatId — wire sendMessage here so the video scheduler, authWatch
+// and watchdog can actually DM the owner (without this they'd throw TypeError).
+jobsNotify.sendMessage = async (text) => {
+  const chatId = jobsNotify.getChatId();
+  if (!chatId) return false;
+  try {
+    await bot.telegram.sendMessage(chatId, text, { parse_mode: "Markdown" });
+    return true;
+  } catch (err) {
+    console.warn("[JobsNotify] sendMessage failed:", err.message);
+    return false;
+  }
+};
+
 // ── Command handlers — registered BEFORE the catch-all text handler so /start
 //    and /jobs actually fire instead of falling through to generic chat ──
 bot.start((ctx) => {
@@ -227,7 +242,7 @@ async function handleIncomingText(ctx, text) {
   // Video status — "video status" / "shorts status" / "youtube status".
   if (/(video|shorts|youtube)\s+(status|report|state)/i.test(text)) {
     const vs = videoWorkflow.getVideoState();
-    const ya = authWatch.getAuthState();
+    const ya = await authWatch.getAuthState();
     const authLine = ya.tokenPresent
       ? (ya.hoursLeft != null
         ? `token ✅ · expires ~${Math.max(0, Math.floor(ya.hoursLeft / 24))}d ${Math.max(0, ya.hoursLeft % 24)}h · say "youtube auth" to re-link anytime`
@@ -251,7 +266,7 @@ async function handleIncomingText(ctx, text) {
 
   // YouTube auth link on demand — "youtube auth" / "youtube authorize" / "yt link".
   if (/(youtube|yt)\s+(auth|authorize|link|re-auth|relink)/i.test(text) || /auth\s+(link|url|youtube)/i.test(text)) {
-    const ya = authWatch.getAuthState();
+    const ya = await authWatch.getAuthState();
     const head = ya.tokenPresent
       ? (ya.hoursLeft != null
         ? `Your YouTube token is live — re-approve now to renew it before it expires (~${Math.max(0, Math.floor(ya.hoursLeft / 24))}d ${Math.max(0, ya.hoursLeft % 24)}h left).`
@@ -413,15 +428,14 @@ const server = http.createServer((req, res) => {
     const { handleOauthCallback, saveRefreshToken } = require("./workflows/video/youtube.js");
     handleOauthCallback(code)
       .then(async (tokens) => {
-        // persist to Render env vars (survives redeploys) if RENDER_API_KEY present
-        if (process.env.RENDER_API_KEY) {
-          try {
-            const { setRenderEnvVar } = require("./workflows/video/renderEnv.js");
-            await setRenderEnvVar("YOUTUBE_REFRESH_TOKEN", tokens.refresh_token);
-            await setRenderEnvVar("YOUTUBE_AUTHED_AT", String(Date.now()));
-          } catch (e) {
-            console.error("[OAuth] render env persist failed:", e.message);
-          }
+        // Persist durably via the jobs DB kv store (survives redeploys) — NOT the
+        // Render bulk env-var PUT, which silently wipes secret vars the API GET hides.
+        try {
+          const ts = require("./workflows/video/tokenStore.js");
+          await ts.setToken(tokens.refresh_token);
+          await ts.setAuthedAt(Date.now());
+        } catch (e) {
+          console.error("[OAuth] durable token persist failed:", e.message);
         }
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(

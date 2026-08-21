@@ -31,17 +31,15 @@ function findServiceId() {
 
 // Upsert ONE env var, preserving all existing vars.
 async function setRenderEnvVar(key, value) {
-  const svcId = await findServiceId();
-  const got = await api(`/services/${svcId}/env-vars`);
-  const current = (Array.isArray(got) ? got : []).map((x) => ({
-    key: x.envVar ? x.envVar.key : x.key,
-    value: x.envVar ? x.envVar.value : x.value,
-  }));
-  const map = new Map(current.map((e) => [e.key, e.value]));
-  map.set(key, value);
-  const list = [...map.entries()].map(([k, v]) => ({ key: k, value: v }));
-  await api(`/services/${svcId}/env-vars`, { method: "PUT", body: JSON.stringify(list) });
-  return true;
+  // DANGER — DISABLED. The Render env-var API is a bulk-PUT (GET all -> PUT back),
+  // but the GET omits SECRET vars (TELEGRAM_BOT_TOKEN, GEMINI_KEYS, HF_TOKEN...),
+  // so writing the list back silently DELETED them from the service config and
+  // crashed every deploy ("TELEGRAM_BOT_TOKEN is missing"). On 2026-08-21 this
+  // wiped the secrets; they were restored and the YouTube token is now persisted
+  // durably in the jobs DB kv store (src/workflows/video/tokenStore.js).
+  // NEVER bulk-PUT Render env vars again.
+  console.warn(`[renderEnv] setRenderEnvVar("${key}") DISABLED — bulk env-var PUT wipes secrets. Use tokenStore (jobs DB kv) instead.`);
+  return false;
 }
 
 module.exports = { setRenderEnvVar };

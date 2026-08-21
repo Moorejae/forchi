@@ -35,19 +35,28 @@ function consentUrl() {
 }
 
 // Call right after a successful OAuth callback / CLI auth (records the clock).
-function recordAuth(token) {
+// Persists durably (jobs DB kv) so the token + clock survive redeploys.
+async function recordAuth(token) {
   const s = loadState();
   s.authorizedAt = Date.now();
-  s.tokenPresent = !!token || !!(process.env.YOUTUBE_REFRESH_TOKEN);
+  try { s.tokenPresent = !!token || !!(await require("./tokenStore.js").getToken()); } catch (e) { s.tokenPresent = !!token; }
   s.lastWarned = 0; // fresh token -> allow a new warn when it ages again
   saveState(s);
+  try { await require("./tokenStore.js").setToken(token); } catch (e) { /* non-fatal */ }
+  try { await require("./tokenStore.js").setAuthedAt(Date.now()); } catch (e) { /* non-fatal */ }
+  return true;
 }
 
-function getAuthState() {
+async function getAuthState() {
   const s = loadState();
+  const ts = require("./tokenStore.js");
+  let dbAuthed = null;
+  try { dbAuthed = await ts.getAuthedAt(); } catch (e) { /* non-fatal */ }
   const envAuthed = process.env.YOUTUBE_AUTHED_AT ? Number(process.env.YOUTUBE_AUTHED_AT) : null;
-  const authorizedAt = envAuthed || s.authorizedAt || null;
-  const token = process.env.YOUTUBE_REFRESH_TOKEN;
+  const dbAuthedN = dbAuthed ? Number(dbAuthed) : null;
+  const authorizedAt = envAuthed || dbAuthedN || s.authorizedAt || null;
+  let token = null;
+  try { token = (await ts.getToken()) || null; } catch (e) { token = process.env.YOUTUBE_REFRESH_TOKEN || null; }
   const expiresAt = authorizedAt ? authorizedAt + EXPIRY_DAYS * 24 * 3600 * 1000 : null;
   const hoursLeft = expiresAt ? Math.floor((expiresAt - Date.now()) / 3600000) : null;
   return {
@@ -73,7 +82,7 @@ function buildConsentMessage(why) {
 async function checkYoutubeAuth({ notify } = {}) {
   const s = loadState();
   const now = Date.now();
-  const token = process.env.YOUTUBE_REFRESH_TOKEN;
+  const token = (await require("./tokenStore.js").getToken()) || null;
 
   const warn = (msg) => {
     s.lastWarned = now;
@@ -121,10 +130,12 @@ async function checkYoutubeAuth({ notify } = {}) {
 
 // Pre-emptive weekly warning: warn when the token is >= WARN_DAYS old (approx
 // 1 day left) so the owner can re-approve before anything breaks.
-function checkPreemptive({ notify } = {}) {
+async function checkPreemptive({ notify } = {}) {
   const s = loadState();
+  let dbAuthed = null;
+  try { dbAuthed = await require("./tokenStore.js").getAuthedAt(); } catch (e) { /* non-fatal */ }
   const envAuthed = process.env.YOUTUBE_AUTHED_AT ? Number(process.env.YOUTUBE_AUTHED_AT) : null;
-  const authorizedAt = envAuthed || s.authorizedAt || null;
+  const authorizedAt = envAuthed || (dbAuthed ? Number(dbAuthed) : null) || s.authorizedAt || null;
   if (!authorizedAt) return { ok: true, reason: "no-eta" };
   const now = Date.now();
   if (now < authorizedAt + WARN_DAYS * 24 * 3600 * 1000) return { ok: true, reason: "still-fresh" };
@@ -140,7 +151,7 @@ function checkPreemptive({ notify } = {}) {
 async function runAuthCheck({ notify } = {}) {
   const res = await checkYoutubeAuth({ notify });
   if (res.reason !== "no-token" && res.reason !== "expired") {
-    checkPreemptive({ notify });
+    await checkPreemptive({ notify });
   }
   return getAuthState();
 }

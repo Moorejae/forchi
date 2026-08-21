@@ -53,6 +53,11 @@ const SQLITE_DDL = `
       job_id INTEGER NOT NULL UNIQUE,
       sent_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS kv (
+      k TEXT PRIMARY KEY,
+      v TEXT,
+      updated_at TEXT
+    );
 `;
 
 const PG_DDL = `
@@ -92,6 +97,11 @@ const PG_DDL = `
       id BIGSERIAL PRIMARY KEY,
       job_id BIGINT NOT NULL UNIQUE,
       sent_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS kv (
+      k TEXT PRIMARY KEY,
+      v TEXT,
+      updated_at TEXT
     );
 `;
 
@@ -405,9 +415,29 @@ async function getStats() {
   };
 }
 
+// Generic key/value store — durable on Postgres across Render redeploys, local
+// SQLite otherwise. Used for the YouTube refresh token + auth clock so secrets
+// survive deploys WITHOUT the dangerous Render bulk env-var PUT (which wipes
+// secret vars the API GET doesn't return).
+async function kvSet(key, value) {
+  const db = await getJobsDB();
+  await db.run(
+    `INSERT INTO kv (k, v, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT(k) DO UPDATE SET v = excluded.v, updated_at = excluded.updated_at`,
+    [String(key), value == null ? null : String(value), new Date().toISOString()]
+  );
+}
+
+async function kvGet(key) {
+  const db = await getJobsDB();
+  const row = await db.get(`SELECT v FROM kv WHERE k = ?`, [String(key)]);
+  return row ? row.v : null;
+}
+
 module.exports = {
   getJobsDB, insertJobs, getNewJobs, getJobsByStatus, getJobById,
   setJobStatus, setJobScore, storeApplication, getApplicationForJob,
   hasApplied, markApplied, markApplyError, countAppliedToday, countAppliedSince, getApplied, getStats,
   markEmailSent, hasEmailSent, countEmailsSent, hasSimilarHandled, expireStaleMatched,
+  kvSet, kvGet,
 };
