@@ -159,11 +159,15 @@ def pick_instrumental():
 
 
 def build_bed(src, dur_s, out_path, peak_db=-6.0, fade_out_st=None):
-    """Convert + trim ANY audio (ogg/mp3/wav instrumental or piano lib) to a 24k mono
-    bed at a consistent peak level, faded in/out. dur_s = trim length.
-    fade_out_st: absolute time (s) the fade-out starts; default = dur_s - 2 (fade to end)."""
-    import subprocess, imageio_ffmpeg
-    FF = imageio_ffmpeg.get_ffmpeg_exe()
+    """Convert + LOOP any audio (ogg/mp3/wav instrumental or piano lib) to a 24k mono
+    bed at a consistent peak level, faded in/out, that plays for the FULL dur_s.
+    -stream_loop -1 guarantees the music runs to the END of the video even when
+    the source track is shorter than the narration (previously it ended early)."""
+    import subprocess, shutil, imageio_ffmpeg
+    if not src or not os.path.exists(src):
+        print(f'  [music] bed source missing: {src}', flush=True)
+        return None
+    FF = shutil.which("ffmpeg") or imageio_ffmpeg.get_ffmpeg_exe()
     peak = None
     try:
         r = subprocess.run([FF, '-i', src, '-af', 'volumedetect', '-f', 'null', '-'],
@@ -179,9 +183,9 @@ def build_bed(src, dur_s, out_path, peak_db=-6.0, fade_out_st=None):
     st = fade_out_st if fade_out_st is not None else max(dur_s - 2, 0)
     d = min(2.0, max(dur_s - st, 0)) if st < dur_s else 0.0
     af = f'volume={gain:.4f},afade=t=in:d=1.5,afade=t=out:st={st:.2f}:d={d:.2f}'
-    subprocess.run([FF, '-y', '-i', src, '-t', f'{dur_s:.2f}', '-af', af,
-                    '-ar', '24000', '-ac', '1', out_path], capture_output=True)
-    return out_path
+    subprocess.run([FF, '-y', '-stream_loop', '-1', '-i', src, '-t', f'{dur_s:.2f}',
+                    '-af', af, '-ar', '24000', '-ac', '1', out_path], capture_output=True)
+    return out_path if os.path.exists(out_path) else None
 
 
 if __name__ == '__main__':

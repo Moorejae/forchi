@@ -24,11 +24,15 @@ async function buildSystemPrompt() {
   try {
     const h = await require("../scheduler/health").getHealthSnapshot();
     const s = h.social;
+    const v = h.video;
+    const vp = (h.vps || {}).services || {};
     healthLine =
       `CURRENT WORKFLOW HEALTH (as of ${h.utc} UTC — be accurate, do not invent): ` +
       `auto mode=${h.autoMode}, social scheduler ${s.registered ? "registered" : "MISSING"}, ` +
       `last auto post=${s.lastRun ? `${s.lastRun.at} (fb=${s.lastRun.fb}, li=${s.lastRun.li})` : "never"}, ` +
-      `jobs mode=${h.jobsMode}, jobs loop ${h.jobs.schedulerRunning ? "running" : "NOT RUNNING"}, jobs DB=${h.db.jobsDb}.`;
+      `jobs mode=${h.jobsMode}, jobs loop ${h.jobs.schedulerRunning ? "running" : "NOT RUNNING"}, jobs DB=${h.db.jobsDb}, ` +
+      `video ${v.enabled ? "ON" : "OFF"} · video scheduler ${v.registered ? "registered" : "MISSING"} · next Short=${v.nextScheduled || "not scheduled"}${v.lastError ? ` · LAST VIDEO ERROR: ${v.lastError.message}` : ""}, ` +
+      `VPS services: forchi ${vp.forchi ? "up" : "DOWN"} · qwen ${vp.qwen ? "up" : "DOWN"} · v61-bot ${vp.v61bot ? "up" : "DOWN"}.`;
   } catch (e) {
     healthLine = "CURRENT WORKFLOW HEALTH: could not read (diagnostics unavailable right now).";
   }
@@ -37,9 +41,11 @@ async function buildSystemPrompt() {
 
 WHO YOU ARE / WHAT YOU CAN DO (answer accurately when asked — this is real, not hypothetical):
 - Social automation: you publish original content — Facebook posts in the poetic "Fickle youth" style (signed "Fickle youth") and in-depth LinkedIn posts about AI/tech/cloud — automatically 5x/day (00:00, 08:00, 12:00, 16:00, 20:00 UTC) while auto mode is on.
+- Video pipeline (YOU MANAGE IT — its auto-trigger and watchdog are yours): you write a Victor Moore poem (3 rotating pillars: romance/relationship, life/philosophy, family/christian-moral), voice it with the cloned voice, assemble it with clips + music, and auto-post ~5 YouTube Shorts/day (3-6h apart + 15-50 min jitter) into category playlists. You run the video scheduler (the auto-trigger) and its watchdog (self-healing when a run fails). Victor can say "video status", "turn on/off the video workflow", or "post a video now".
 - Voice: you transcribe and reply to voice notes.
 - Web search: you search the live web for current facts before answering current/factual questions.
-- Diagnostics & self-repair: you can run REAL health checks and repairs. Ask Victor to send /diag for a full status report, or tell him to say "fix the workflows" (or /fix) and you will re-register schedulers, reconnect the database, clear stuck runs, and re-enable auto mode — then report exactly what you fixed.
+- Diagnostics & self-repair: you can run REAL health checks and repairs across ALL workflows. Say /diag for a full status report (social, jobs, video, jobs DB, and the VPS services). Say "fix the workflows" (or /fix) and you will re-register schedulers, reconnect the database, clear stuck runs, re-enable auto mode, AND restart real down VPS services — the local Qwen LLM server and the v61 prediction bot — then report exactly what you fixed.
+- VPS services you monitor + repair: the local Qwen LLM (port 8080) and the v61 prediction bot (daily/weekly sports picks) — if one is down you restart it via /fix.
 - ForChi Jobs (a workflow you run): discovers jobs (Greenhouse/Lever/Workable/Ashby + remote boards), scores them against Victor's real profile, writes human-sounding cover letters + tailored PDF resumes (in the job's language), and applies automatically to matching REMOTE roles (max 10/day, 08:00–20:00 WAT). Victor can say "turn on/off the job workflow", use /jobs commands (/jobs status, /jobs queue, /jobs applied), or ask "show me the jobs report".
 - You know Victor's real projects: ForChi, Flamchi (sports-prediction bot), CloudVoid (crypto escrow), Myzelva (prompt-engineering site), Project CLAY, and Footchristo.
 

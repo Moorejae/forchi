@@ -131,30 +131,35 @@ setInterval(async () => {
     const snap = await health.getHealthSnapshot();
     const dbBad = typeof snap.db.jobsDb === "string" && snap.db.jobsDb !== "ok";
     const videoBroken = snap.video.enabled && !snap.video.registered;
-    const broken = !snap.social.registered || snap.jobs.schedulerRunning === false || dbBad || videoBroken;
+    const svc = (snap.vps && snap.vps.services) || {};
+    const vpsBroken = svc.qwen === false || svc.v61bot === false;
+    const broken = !snap.social.registered || snap.jobs.schedulerRunning === false || dbBad || videoBroken || vpsBroken;
     if (!broken) return;
 
     // Issue signature so repeat occurrences of the SAME issue don't spam.
-    const sig = JSON.stringify([snap.social.registered, snap.jobs.schedulerRunning, dbBad ? snap.db.jobsDb : "ok", videoBroken]);
+    const sig = JSON.stringify([snap.social.registered, snap.jobs.schedulerRunning, dbBad ? snap.db.jobsDb : "ok", videoBroken, svc.qwen === false, svc.v61bot === false]);
     const now = Date.now();
     const cooldownMs = 60 * 60 * 1000; // re-notify same issue at most hourly
     if (lastWatchdogNotify && lastWatchdogNotify.sig === sig && now - lastWatchdogNotify.at < cooldownMs) return;
 
-    console.warn(`[Watchdog] Detected degraded state — repairing (social=${snap.social.registered}, jobs=${snap.jobs.schedulerRunning}, db=${snap.db.jobsDb}, video=${snap.video.registered ? "ok" : videoBroken ? "MISSING" : "off"})`);
+    console.warn(`[Watchdog] Detected degraded state — repairing (social=${snap.social.registered}, jobs=${snap.jobs.schedulerRunning}, db=${snap.db.jobsDb}, video=${snap.video.registered ? "ok" : videoBroken ? "MISSING" : "off"}, qwen=${svc.qwen === false ? "DOWN" : "ok"}, v61=${svc.v61bot === false ? "DOWN" : "ok"})`);
     const actions = await health.repairWorkflows({ bot, notify: (t) => jobsNotify.sendMessage(t) });
     actions.forEach((a) => console.log(`[Watchdog] • ${a}`));
 
     // Re-check after repair.
     const after = await health.getHealthSnapshot();
+    const asvc = (after.vps && after.vps.services) || {};
     const stillBroken =
       !after.social.registered ||
       after.jobs.schedulerRunning === false ||
       (typeof after.db.jobsDb === "string" && after.db.jobsDb !== "ok") ||
-      (after.video.enabled && !after.video.registered);
+      (after.video.enabled && !after.video.registered) ||
+      asvc.qwen === false ||
+      asvc.v61bot === false;
 
     const parts = [
       `🩺 *ForChi self-heal* — I detected a problem and tried to fix it automatically.`,
-      `• Found: social=${snap.social.registered ? "ok" : "MISSING"}, jobs=${snap.jobs.schedulerRunning ? "ok" : "NOT RUNNING"}, jobs DB=${dbBad ? snap.db.jobsDb : "ok"}, video=${after.video.enabled && snap.video.registered ? "ok" : "MISSING"}`,
+      `• Found: social=${snap.social.registered ? "ok" : "MISSING"}, jobs=${snap.jobs.schedulerRunning ? "ok" : "NOT RUNNING"}, jobs DB=${dbBad ? snap.db.jobsDb : "ok"}, video=${after.video.enabled && snap.video.registered ? "ok" : "MISSING"}, qwen=${svc.qwen === false ? "DOWN" : "ok"}, v61-bot=${svc.v61bot === false ? "DOWN" : "ok"}`,
       ...actions.map((a) => `• ${a}`),
     ];
     if (stillBroken) {

@@ -22,6 +22,7 @@ const jobsScheduler = require("../workflows/jobs/scheduler");
 const jobsDb = require("../workflows/jobs/db");
 const videoWorkflow = require("../workflows/video/index");
 const videoScheduler = require("../workflows/video/scheduler");
+const vps = require("./vps"); // REAL VPS service health + repair
 
 const bootTime = Date.now();
 
@@ -52,6 +53,7 @@ async function getHealthSnapshot() {
       consecutiveFailures: videoWorkflow.getVideoState().consecutiveFailures,
     },
     db: { jobsDb: "unknown" },
+    vps: { services: {}, qwenPort: false },
   };
 
   // Jobs DB probe (uses the reconnect-hardened client; never throws the snapshot).
@@ -63,6 +65,13 @@ async function getHealthSnapshot() {
     out.jobs.pendingApply = s.pendingApply;
   } catch (err) {
     out.db.jobsDb = `error: ${err.message}`;
+  }
+
+  // REAL VPS services (qwen LLM, v61 prediction bot) — never throws.
+  try {
+    out.vps = await vps.getVpsHealth();
+  } catch (err) {
+    out.vps = { services: {}, qwenPort: false, error: err.message };
   }
   return out;
 }
@@ -110,6 +119,10 @@ async function repairWorkflows({ bot, notify } = {}) {
     actions.push(`jobs DB still failing: ${err.message}`);
   }
 
+  // 5. REAL VPS services: restart a down qwen / v61-bot.
+  const vpsActions = await vps.repairVps();
+  actions.push(...vpsActions);
+
   return actions;
 }
 
@@ -136,6 +149,11 @@ function registerHealthCommands(bot) {
       `Jobs scheduler: ${snap.jobs.schedulerRunning ? "running ✅" : "NOT RUNNING ⛔"}`,
       `Jobs DB: ${snap.db.jobsDb}`,
     ];
+    const vpsSnap = snap.vps || {};
+    const svc = vpsSnap.services || {};
+    lines.push(
+      `VPS services: forchi ${svc.forchi === undefined ? "?" : svc.forchi ? "✅" : "⛔"} · qwen ${svc.qwen === undefined ? "?" : svc.qwen ? "✅" : "⛔"}${vpsSnap.qwenPort ? " (port 8080)" : ""} · v61-bot ${svc.v61bot === undefined ? "?" : svc.v61bot ? "✅" : "⛔"}`
+    );
     if (snap.jobs.totalJobs != null) lines.push(`Jobs totals: seen ${snap.jobs.totalJobs} · applied ${snap.jobs.applied} · queued ${snap.jobs.pendingApply}`);
     lines.push(`\nSay "fix the workflows" (or /fix) if anything looks broken.`);
     return ctx.reply(lines.join("\n"), { parse_mode: "Markdown" });
