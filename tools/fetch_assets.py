@@ -20,7 +20,24 @@ REPO = "slymun/forchi-assets"
 REMOTE_PATH = "assets_bundle.zip"
 
 
+def _load_env():
+    """Parse BASE/.env into os.environ (the tools run standalone, not via the node bot)."""
+    try:
+        with open(os.path.join(BASE, ".env"), "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("#") or "=" not in line:
+                    continue
+                k, _, v = line.partition("=")
+                k, v = k.strip(), v.strip().strip('"').strip("'")
+                if k and k not in os.environ:
+                    os.environ[k] = v
+    except Exception:
+        pass
+
+
 def main():
+    _load_env()
     token = os.environ.get("HF_ACCESS_TOKEN") or os.environ.get("HF_TOKEN") or ""
     if not token:
         print("no HF_ACCESS_TOKEN/HF_TOKEN")
