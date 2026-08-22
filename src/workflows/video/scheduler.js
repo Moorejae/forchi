@@ -28,21 +28,34 @@ function loadRange() {
   }
 }
 
+// 5 Shorts/day: random 3-6 HOURS apart PLUS a 15-50 min human-like variation
+// (avg ~5h -> ~5 posts/day; the 15-50 min keeps the organic feel).
+const HOURS_MIN = 3;
+const HOURS_MAX = 6;
+const EXTRA_MIN = 15;
+const EXTRA_MAX = 50;
+
 function jitterMinutes() {
-  const { min, max } = loadRange();
-  return Math.round(min + Math.random() * (max - min));
+  const hours = HOURS_MIN + Math.random() * (HOURS_MAX - HOURS_MIN);
+  const extra = EXTRA_MIN + Math.random() * (EXTRA_MAX - EXTRA_MIN);
+  return Math.round(hours * 60 + extra);
+}
+
+function fmtGap(mins) {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m ? `${h}h ${m}m` : `${h}h`;
 }
 
 function getSchedulerState() {
-  const r = loadRange();
   return {
     registered,
     running,
     enabled: videoWorkflow.state.enabled,
     autoMode: autoMode.isEnabled(),
     nextScheduled: videoWorkflow.state.nextScheduled,
-    minJitter: r.min,
-    maxJitter: r.max,
+    minJitter: HOURS_MIN * 60 + EXTRA_MIN,
+    maxJitter: HOURS_MAX * 60 + EXTRA_MAX,
     lastPost: videoWorkflow.getVideoState().lastPost,
     consecutiveFailures: videoWorkflow.getVideoState().consecutiveFailures,
   };
@@ -78,7 +91,7 @@ function scheduleNext() {
   }
   const mins = jitterMinutes();
   videoWorkflow.state.nextScheduled = new Date(Date.now() + mins * 60000).toISOString();
-  console.log(`[VideoScheduler] next Short in ~${mins} min (${videoWorkflow.state.nextScheduled})`);
+  console.log(`[VideoScheduler] next Short in ~${fmtGap(mins)} (${videoWorkflow.state.nextScheduled})`);
   timer = setTimeout(tick, mins * 60000);
   if (typeof timer.unref === "function") timer.unref();
 }
@@ -88,7 +101,7 @@ function initVideoScheduler({ notify: nf } = {}) {
   notify = nf;
   registered = true;
   scheduleNext();
-  console.log("[VideoScheduler] registered (random 15-50 min jitter between Shorts)");
+  console.log("[VideoScheduler] registered (~5 posts/day: 3-6h apart + 15-50 min jitter)");
 }
 
 function reRegister({ notify: nf } = {}) {

@@ -54,15 +54,20 @@ async function notify(text) {
   } catch (e) { console.warn("[Standalone] notify failed:", e.message); }
 }
 
-function jitterRange() {
-  const m = loadMode();
-  const min = m.minJitterMinutes != null ? Number(m.minJitterMinutes) : DEFAULT_MIN;
-  const max = m.maxJitterMinutes != null ? Number(m.maxJitterMinutes) : DEFAULT_MAX;
-  return { min: Math.max(2, Math.min(min, max)), max: Math.max(min, max) };
-}
+// 5 Shorts/day: random 3-6 HOURS apart PLUS a 15-50 min human-like variation
+const HOURS_MIN = 3;
+const HOURS_MAX = 6;
+const EXTRA_MIN = 15;
+const EXTRA_MAX = 50;
 function randomMins() {
-  const { min, max } = jitterRange();
-  return Math.round(min + Math.random() * (max - min));
+  const hours = HOURS_MIN + Math.random() * (HOURS_MAX - HOURS_MIN);
+  const extra = EXTRA_MIN + Math.random() * (EXTRA_MAX - EXTRA_MIN);
+  return Math.round(hours * 60 + extra);
+}
+function fmtGap(mins) {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m ? `${h}h ${m}m` : `${h}h`;
 }
 
 let timer = null;
@@ -74,7 +79,7 @@ function scheduleNext() {
   m.enabled = true;
   m.nextRunAt = at;
   saveMode(m);
-  console.log(`[Standalone] next Short in ~${mins} min (${new Date(at).toISOString()})`);
+  console.log(`[Standalone] next Short in ~${fmtGap(mins)} (${new Date(at).toISOString()})`);
   timer = setTimeout(tick, mins * 60000);
   if (typeof timer.unref === "function") timer.unref();
 }
