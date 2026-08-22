@@ -11,7 +11,11 @@ import os, subprocess, json, re, shutil
 import imageio_ffmpeg
 from _paths import BASE
 
-FF = imageio_ffmpeg.get_ffmpeg_exe()
+# Prefer the system ffmpeg (has drawtext/libass) over the imageio-ffmpeg bundled
+# binary, whose Linux build LACKS the drawtext filter (breaks the watermark step).
+FF = (os.environ.get("FFMPEG_BIN")
+      or shutil.which("ffmpeg")
+      or imageio_ffmpeg.get_ffmpeg_exe())
 # reference caption style = script/handwritten bold-italic font (Ink Free / Segoe Script)
 FONT_CANDIDATES = [
     r'C:\Windows\Fonts\Inkfree.ttf',
