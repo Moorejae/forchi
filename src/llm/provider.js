@@ -71,7 +71,10 @@ async function callLLMServer(prompt, isJson = false, maxTokens = 600) {
   if (!content) throw new Error("LLM server returned empty content");
 
   console.log(`[Provider] ✅ Self-hosted LLM (${model}) succeeded`);
-  return content.trim();
+  // Qwen3 runs in thinking mode and can prefix replies with <think>...</think>;
+  // strip it so the user (and any JSON parser) only ever sees the real answer.
+  const cleaned = content.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  return cleaned || content.trim();
 }
 
 // Bound a promise so a dead endpoint can never hang the pipeline forever.
