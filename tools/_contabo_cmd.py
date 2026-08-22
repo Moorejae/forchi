@@ -1,10 +1,16 @@
 # Run an arbitrary remote shell command on the Contabo VPS.
-# Uses paramiko with the root password from .env (password never printed). This
-# is the reliable path here — the local id_ed25519 key is passphrase-encrypted
-# and the agent can't unlock it non-interactively, while password auth works.
+# Writes the command verbatim to /tmp/cmd.sh on the VPS via SFTP then runs it —
+# so there are NO local/remote shell-quoting issues, ever.
+# Uses paramiko with the root password from .env (password never printed).
 # Usage: python tools/_contabo_cmd.py 'remote command here'
 import os
 import sys
+
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
 import paramiko
 
@@ -34,15 +40,20 @@ def main():
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     client.connect(HOST, port=22, username=USER, password=pw, timeout=20)
-    stdin, stdout, stderr = client.exec_command(cmd, timeout=600)
-    out = stdout.read().decode(errors="replace")
+    sftp = client.open_sftp()
+    with sftp.open("/tmp/cmd.sh", "w") as f:
+        f.write(cmd + "\n")
+    sftp.close()
+    stdin, stdout, stderr = client.exec_command("bash /tmp/cmd.sh", timeout=600)
+    for line in iter(stdout.readline, ""):
+        print(line, end="")
     err = stderr.read().decode(errors="replace")
-    if out.strip():
-        print(out.rstrip())
+    rc = stdout.channel.recv_exit_status()
     if err.strip():
         print("STDERR:", err.strip()[:1500])
+    print("exit=", rc)
     client.close()
-    return 0
+    return rc
 
 
 if __name__ == "__main__":
