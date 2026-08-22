@@ -17,7 +17,7 @@
 //   EMAIL_FROM       Resend from address (default uses Resend's onboarding@resend.dev)
 //   SMTP_USER/PASS   Gmail SMTP fallback
 const nodemailer = require("nodemailer");
-const { getResumeBuffer } = require("./applyEngine");
+const { getResumeBuffer, getCoverLetterBuffer } = require("./applyEngine");
 
 const TO = process.env.EMAIL_TO || "agumoorewe@gmail.com";
 const SMTP_HOST = process.env.SMTP_HOST || "smtp.gmail.com";
@@ -32,7 +32,7 @@ function configured() {
 }
 
 // Resend HTTPS API (port 443 — the only reliable outbound path on Render).
-async function sendViaResend({ to, subject, text, resumePdf, company }) {
+async function sendViaResend({ to, subject, text, resumePdf, coverLetterPdf, company }) {
   if (!RESEND_KEY) return false;
   const body = {
     from: FROM,
@@ -40,9 +40,10 @@ async function sendViaResend({ to, subject, text, resumePdf, company }) {
     subject,
     text,
   };
-  if (resumePdf) {
-    body.attachments = [{ filename: `Agu_Victor_Resume_${safeName(company)}.pdf`, content: resumePdf.toString("base64") }];
-  }
+  body.attachments = [];
+  if (resumePdf) body.attachments.push({ filename: `Agu_Victor_Resume_${safeName(company)}.pdf`, content: resumePdf.toString("base64") });
+  if (coverLetterPdf) body.attachments.push({ filename: `Agu_Victor_Cover_Letter_${safeName(company)}.pdf`, content: coverLetterPdf.toString("base64") });
+  if (!body.attachments.length) delete body.attachments;
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
@@ -72,9 +73,14 @@ async function sendMatchEmail(job, { coverLetter, resumeTailored }) {
     { host: SMTP_HOST, port: 2525, secure: false },
   ];
   let resumePdf = null;
+  let coverLetterPdf = null;
   if (resumeTailored && resumeTailored.length > 100) {
     try { resumePdf = await getResumeBuffer(resumeTailored); }
     catch (e) { console.warn("[JobsEmail] resume PDF failed:", e.message); }
+  }
+  if (coverLetter) {
+    try { coverLetterPdf = await getCoverLetterBuffer(coverLetter); }
+    catch (e) { console.warn("[JobsEmail] cover letter PDF failed:", e.message); }
   }
 
   const subject = `🎯 Job match: ${job.company} — ${job.title}`;
@@ -94,21 +100,23 @@ async function sendMatchEmail(job, { coverLetter, resumeTailored }) {
     coverLetter || "(none)",
     "",
     resumePdf ? "Your tailored resume is attached as a PDF." : "Resume PDF unavailable.",
+    coverLetterPdf ? "Your tailored cover letter is attached as a PDF too." : "",
     "",
     "— ForChi Jobs",
   ].join("\n");
+  const attachments = [];
+  if (resumePdf) attachments.push({ filename: `Agu_Victor_Resume_${safeName(job.company)}.pdf`, content: resumePdf });
+  if (coverLetterPdf) attachments.push({ filename: `Agu_Victor_Cover_Letter_${safeName(job.company)}.pdf`, content: coverLetterPdf });
   const mail = {
     from: `"ForChi Jobs" <${SMTP_USER}>`,
     to: TO,
     subject,
     text,
-    attachments: resumePdf
-      ? [{ filename: `Agu_Victor_Resume_${safeName(job.company)}.pdf`, content: resumePdf }]
-      : [],
+    attachments,
   };
 
   // 1) Resend (HTTPS — the reliable path on Render).
-  if (await sendViaResend({ to: TO, subject, text, resumePdf, company: job.company })) return true;
+  if (await sendViaResend({ to: TO, subject, text, resumePdf, coverLetterPdf, company: job.company })) return true;
 
   // 2) SMTP fallback (587 → 465 → 2525).
   let lastErr = null;

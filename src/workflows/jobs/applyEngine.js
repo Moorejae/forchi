@@ -146,6 +146,72 @@ function fdAppendFile(fd, name, buf, filename) {
   fd.append(name, new Blob([buf], { type: "application/pdf" }), filename);
 }
 
+// Render the cover letter to a clean letter-format PDF (same fonts as the resume).
+// Returns a Buffer, or null when there is no letter / pdfkit is unavailable.
+async function getCoverLetterBuffer(coverLetterText) {
+  try {
+    const PDFDocument = require("pdfkit");
+    const text = String(coverLetterText || "").trim();
+    if (!text) return null;
+    return await new Promise((resolve) => {
+      const chunks = [];
+      const doc = new PDFDocument({ size: "LETTER", margin: 64 });
+      doc.on("data", (c) => chunks.push(c));
+      doc.on("end", () => resolve(Buffer.concat(chunks)));
+
+      doc.registerFont("Carlito-Regular", F.regular);
+      doc.registerFont("Carlito-Bold", F.bold);
+      doc.registerFont("Carlito-Italic", F.italic);
+
+      const ACCENT = "#1F3864";
+      const DARK = "#1a1a1a";
+      const GRAY = "#555555";
+
+      // Sender header (name / title / contact)
+      doc.font("Carlito-Bold").fontSize(15).fillColor(ACCENT).text(PROFILE.name.toUpperCase());
+      doc.font("Carlito-Regular").fontSize(10).fillColor(DARK).text(PROFILE.title);
+      doc.font("Carlito-Regular").fontSize(8.5).fillColor(GRAY)
+        .text(`WAT (GMT+1) | ${PROFILE.email} | ${PROFILE.phone} | ${PROFILE.linkedin} | ${PROFILE.github}`);
+      doc.moveDown(0.4);
+      doc.moveTo(64, doc.y).lineTo(doc.page.width - 64, doc.y).lineWidth(1.1).strokeColor(ACCENT).stroke();
+      doc.moveDown(1);
+
+      // Date
+      const today = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
+      doc.font("Carlito-Regular").fontSize(10).fillColor(DARK).text(today);
+      doc.moveDown(1);
+
+      // Body paragraphs
+      const paragraphs = text.split(/\n{2,}/).map((p) => p.replace(/\s+/g, " ").trim()).filter(Boolean);
+      for (const p of paragraphs) {
+        doc.font("Carlito-Regular").fontSize(11).fillColor(DARK).text(p, { lineGap: 2, paragraphGap: 6 });
+        doc.moveDown(0.5);
+      }
+      doc.end();
+    });
+  } catch (e) {
+    console.warn("[Jobs] cover letter PDF failed:", e.message);
+    return null;
+  }
+}
+
+function coverLetterFileField(schema) {
+  // Find a file-upload form field that wants the cover letter (best-effort).
+  if (!schema || !schema.length) return null;
+  for (const f of schema) {
+    const t = `${f.type || ""}`.toLowerCase();
+    const label = `${f.label || ""} ${f.key || ""}`.toLowerCase();
+    const isFile = /file|attach|upload|input_file/.test(t);
+    const isCover = /cover ?letter|motivation|introduc|why (you|this)|about (you|yourself)|letter/.test(label);
+    if (isFile && isCover) return f.key;
+  }
+  return null;
+}
+
+function safeName(s) {
+  return String(s || "Company").replace(/[^a-zA-Z0-9]+/g, "_").slice(0, 40);
+}
+
 // ── ATS form auto-fill ───────────────────────────────────────────────────────
 // Fills the company's application-form fields (years of experience, LinkedIn,
 // GitHub, portfolio, work authorization, salary, custom screening questions)
@@ -214,7 +280,7 @@ async function fetchFormSchema(job) {
           const opts = [];
           for (const f of q.fields || []) for (const c of f.choices || []) opts.push({ label: c.label, value: c.value ?? c.label });
           for (const c of q.choices || []) opts.push({ label: c.label, value: c.value ?? c.label });
-          return { key: String(q.name || q.id || q.label || ""), label: q.label || q.name || q.title || "", required: !!q.required, options: opts };
+          return { key: String(q.name || q.id || q.label || ""), label: q.label || q.name || q.title || "", required: !!q.required, options: opts, type: String(q.type || "") };
         });
       }
     } else if (job.source === "lever") {
@@ -227,6 +293,7 @@ async function fetchFormSchema(job) {
           label: q.text || "",
           required: !!q.required,
           options: (q.choices || []).map((c) => ({ label: c.label, value: c.value ?? c.label })),
+          type: String(q.type || ""),
         }));
       }
     }
@@ -328,11 +395,15 @@ async function buildFormData(job, app, ensure = {}) {
 }
 
 // ── Greenhouse ───────────────────────────────────────────────────────────────
-async function submitGreenhouse(job, app, resumeBuf) {
+async function submitGreenhouse(job, app, resumeBuf, coverLetterBuf) {
   const fd = new FormData();
   const fields = await buildFormData(job, app, { email: "email", firstName: "first_name", lastName: "last_name", phone: "phone" });
   for (const [k, v] of fields) fd.append(k, v);
   if (app.coverLetter) fd.append("cover_letter", app.coverLetter);
+  try {
+    const clField = coverLetterFileField(await fetchFormSchema(job));
+    if (clField && coverLetterBuf) fdAppendFile(fd, clField, coverLetterBuf, `Victor_Agu_Cover_Letter_${safeName(job.company)}.pdf`);
+  } catch (e) { /* best-effort file attachment */ }
   fdAppendFile(fd, "resume", resumeBuf, "Victor_Agu_Resume.pdf");
   const url = `https://boards-api.greenhouse.io/v1/boards/${job.board || job.company.toLowerCase()}/jobs/${job.ref_id}/application`;
   const res = await fetch(url, { method: "POST", body: fd, signal: AbortSignal.timeout(60000) });
@@ -341,12 +412,16 @@ async function submitGreenhouse(job, app, resumeBuf) {
 }
 
 // ── Lever ────────────────────────────────────────────────────────────────────
-async function submitLever(job, app, resumeBuf) {
+async function submitLever(job, app, resumeBuf, coverLetterBuf) {
   const fd = new FormData();
   const fields = await buildFormData(job, app, { fullName: "name", email: "email", phone: "phone", location: "org" });
   for (const [k, v] of fields) fd.append(k, v);
   fdAppendFile(fd, "resume", resumeBuf, "Victor_Agu_Resume.pdf");
   if (app.coverLetter) fd.append("comments", app.coverLetter);
+  try {
+    const clField = coverLetterFileField(await fetchFormSchema(job));
+    if (clField && coverLetterBuf) fdAppendFile(fd, clField, coverLetterBuf, `Victor_Agu_Cover_Letter_${safeName(job.company)}.pdf`);
+  } catch (e) { /* best-effort file attachment */ }
   const url = `https://jobs.lever.co/${job.board || job.company.toLowerCase()}/${job.ref_id}/apply`;
   const res = await fetch(url, { method: "POST", body: fd, signal: AbortSignal.timeout(60000) });
   const text = await res.text();
@@ -354,11 +429,15 @@ async function submitLever(job, app, resumeBuf) {
 }
 
 // ── Workable ─────────────────────────────────────────────────────────────────
-async function submitWorkable(job, app, resumeBuf) {
+async function submitWorkable(job, app, resumeBuf, coverLetterBuf) {
   const fd = new FormData();
   const fields = await buildFormData(job, app, { fullName: "name", email: "email", phone: "phone" });
   for (const [k, v] of fields) fd.append(k, v);
   if (app.coverLetter) fd.append("cover_letter", app.coverLetter);
+  try {
+    const clField = coverLetterFileField(await fetchFormSchema(job));
+    if (clField && coverLetterBuf) fdAppendFile(fd, clField, coverLetterBuf, `Victor_Agu_Cover_Letter_${safeName(job.company)}.pdf`);
+  } catch (e) { /* best-effort file attachment */ }
   fdAppendFile(fd, "resume", resumeBuf, "Victor_Agu_Resume.pdf");
   const url = `https://apply.workable.com/api/v3/accounts/${job.board || job.company.toLowerCase()}/jobs/${job.ref_id}/apply`;
   const res = await fetch(url, { method: "POST", body: fd, signal: AbortSignal.timeout(60000) });
@@ -367,11 +446,15 @@ async function submitWorkable(job, app, resumeBuf) {
 }
 
 // ── Ashby ────────────────────────────────────────────────────────────────────
-async function submitAshby(job, app, resumeBuf) {
+async function submitAshby(job, app, resumeBuf, coverLetterBuf) {
   const fd = new FormData();
   const fields = await buildFormData(job, app, { fullName: "name", email: "email", phone: "phone" });
   for (const [k, v] of fields) fd.append(k, v);
   if (app.coverLetter) fd.append("comments", app.coverLetter);
+  try {
+    const clField = coverLetterFileField(await fetchFormSchema(job));
+    if (clField && coverLetterBuf) fdAppendFile(fd, clField, coverLetterBuf, `Victor_Agu_Cover_Letter_${safeName(job.company)}.pdf`);
+  } catch (e) { /* best-effort file attachment */ }
   fdAppendFile(fd, "resume", resumeBuf, "Victor_Agu_Resume.pdf");
   const url = `https://jobs.ashbyhq.com/${job.board || job.company.toLowerCase()}/${job.ref_id}/application`;
   const res = await fetch(url, { method: "POST", body: fd, signal: AbortSignal.timeout(60000) });
@@ -404,17 +487,19 @@ async function submitApplication(job, app) {
   lastSubmitAt = Date.now();
 
   let resumeBuf;
+  let coverLetterBuf = null;
   try {
     // getResumeBuffer returns a Promise for the tailored-render path — MUST be
     // awaited, else the ATS receives a Promise object instead of a PDF and
     // rejects with "Resume file contents do not match the file extension".
     // (This was the bug that made every auto-apply fail while emails worked.)
     resumeBuf = await getResumeBuffer(app.resumeTailored);
+    if (app.coverLetter) coverLetterBuf = await getCoverLetterBuffer(app.coverLetter);
   } catch (e) {
     return { ok: false, response: `Resume missing: ${e.message}` };
   }
   try {
-    const result = await submit(job, app, resumeBuf);
+    const result = await submit(job, app, resumeBuf, coverLetterBuf);
     console.log(`[Jobs] Apply ${job.source} ${job.company}/${job.title} -> ${result.response}`);
     return result;
   } catch (e) {
@@ -423,4 +508,4 @@ async function submitApplication(job, app) {
   }
 }
 
-module.exports = { submitApplication, getResumeBuffer, buildFormData, fetchFormSchema, pickOption, AUTO_APPLY, DAILY_CAP, inApplyWindow };
+module.exports = { submitApplication, getResumeBuffer, getCoverLetterBuffer, buildFormData, fetchFormSchema, pickOption, AUTO_APPLY, DAILY_CAP, inApplyWindow };
