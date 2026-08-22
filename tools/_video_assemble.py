@@ -244,7 +244,8 @@ def assemble(phrases, phrase_wavs, clips, out_name, music=True, watermark=True, 
 
     # 6. final assembly: video concat + subtitles + watermark + audio mix
     #    Run from cwd=work so subtitles=subs.ass is a relative path (no Windows-colon escaping).
-    out = rf'c:\Users\hp\forchi\temp_media\{out_name}.mp4'
+    #    Output path MUST be portable (BASE) — a hardcoded Windows path breaks the VPS/Linux runs.
+    out = os.path.join(BASE, 'temp_media', f'{out_name}.mp4')
     vf = "subtitles=subs.ass"
     if watermark:
         # reference style: watermark top-LEFT, extra small, lowercase, static, low opacity
