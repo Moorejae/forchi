@@ -253,11 +253,16 @@ async function handleIncomingText(ctx, text) {
         ? `token ✅ · expires ~${Math.max(0, Math.floor(ya.hoursLeft / 24))}d ${Math.max(0, ya.hoursLeft % 24)}h · say "youtube auth" to re-link anytime`
         : "token ✅")
       : `MISSING ⛔ — say "youtube auth" to get the approve link`;
+    const ttOk = !!(await require("./workflows/video/tokenStore.js").getTikTokToken().catch(() => null));
+    const ttLine = ttOk ? "token ✅" : `MISSING ⛔ — say "tiktok auth" to get the approve link`;
+    const fbOk = !!(process.env.FACEBOOK_PAGE_ID && (process.env.FACEBOOK_PAGE_TOKEN || process.env.FACEBOOK_PAGE_ACCESS_TOKEN));
     const lines = [
       `🎬 *ForChi video workflow*`,
       `Enabled: ${vs.enabled ? "ON ✅" : "OFF ⛔"}`,
       `Scheduler: ${videoScheduler.getSchedulerState().registered ? "registered ✅" : "MISSING ⛔"}`,
       `YouTube auth: ${authLine}`,
+      `TikTok auth: ${ttLine}`,
+      `Facebook Page: ${fbOk ? "configured ✅" : "MISSING ⛔"}`,
       vs.lastPost
         ? `Last Short: ${vs.lastPost.at} · topic: ${vs.lastPost.topic}\n${vs.lastPost.url}`
         : `Last Short: never yet`,
@@ -280,6 +285,21 @@ async function handleIncomingText(ctx, text) {
     const url = authWatch.consentUrl() || "couldn't build URL (check YOUTUBE_CLIENT_ID / YOUTUBE_CALLBACK_URL)";
     return ctx.reply(
       `${head}\n\n\`${url}\`\n\nApprove → *Advanced* → "Go to forchi.onrender.com (unsafe)" → *Allow*. You'll land on the green connected page.`,
+      { parse_mode: "Markdown" }
+    );
+  }
+
+  // TikTok auth link on demand — "tiktok auth" / "tiktok authorize" / "tt link".
+  if (/(tiktok|tt)\s+(auth|authorize|link|re-auth|relink)/i.test(text) || /auth\s+(link|url|tiktok)/i.test(text)) {
+    const tiktok = require("./workflows/video/tiktok.js");
+    const ts = require("./workflows/video/tokenStore.js");
+    const hasToken = await ts.getTikTokToken().catch(() => null);
+    const head = hasToken
+      ? "Your TikTok token is live ✅ — re-approve anytime to refresh it."
+      : "No TikTok token yet — approve once and I'll push Shorts to TikTok.";
+    const url = tiktok.consentUrl() || "couldn't build URL (check TIKTOK_CLIENT_KEY / TIKTOK_CALLBACK_URL)";
+    return ctx.reply(
+      `${head}\n\n\`${url}\`\n\nApprove → *Allow* → you'll land on the green connected page.`,
       { parse_mode: "Markdown" }
     );
   }
@@ -453,6 +473,28 @@ const server = http.createServer((req, res) => {
         console.error("[OAuth] callback error:", err.message);
         res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
         res.end(`<h2 style='font-family:sans-serif'>Authorization failed</h2><p style='font-family:sans-serif'>${err.message}</p>`);
+      });
+    return;
+  }
+
+  // TikTok OAuth callback: TikTok redirects here after the owner approves the
+  // Content Posting app. We exchange the code, persist tokens durably, show success.
+  if (pathname === "/tiktok_callback") {
+    const code = new URL(req.url, "http://localhost").searchParams.get("code") || "";
+    const { handleOauthCallback } = require("./workflows/video/tiktok.js");
+    handleOauthCallback(code)
+      .then(() => {
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(
+          "<h2 style='font-family:sans-serif'>✅ ForChi is connected to TikTok!</h2>" +
+          "<p style='font-family:sans-serif'>Your TikTok account is authorized. You can close this tab — ForChi will push Shorts to TikTok.</p>"
+        );
+        console.log("[OAuth] TikTok authorization saved successfully.");
+      })
+      .catch((err) => {
+        console.error("[OAuth] TikTok callback error:", err.message);
+        res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(`<h2 style='font-family:sans-serif'>TikTok authorization failed</h2><p style='font-family:sans-serif'>${err.message}</p>`);
       });
     return;
   }

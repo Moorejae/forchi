@@ -107,7 +107,43 @@ const TRIED = {
   "quality-checking the video": "I generated the video and checked it before upload",
   "uploading the video to YouTube": "I made the video and tried to upload it to YouTube",
   "adding the video to its playlist": "I uploaded the video and tried to file it into its theme playlist",
+  "posting to TikTok and Facebook": "the video is live on YouTube and I tried to push it to TikTok and Facebook",
 };
+
+// Post the same Short to TikTok + Facebook in parallel (like the social workflow's
+// Promise.allSettled). YouTube is the primary platform (must succeed); these are
+// secondary — a failure here must NOT fail the whole post, it's recorded instead.
+async function postToSecondaryPlatforms(mp4, { title, description }) {
+  const tasks = [];
+  // TikTok (skipped entirely if no token yet — needs one-time 'tiktok auth' consent)
+  tasks.push(
+    (async () => {
+      const tiktok = require("./tiktok.js");
+      const ts = require("./tokenStore.js");
+      const hasToken = await ts.getTikTokToken().catch(() => null);
+      if (!hasToken && !process.env.TIKTOK_ACCESS_TOKEN) {
+        return { platform: "tiktok", skipped: true, reason: "no token — run 'tiktok auth'" };
+      }
+      const res = await tiktok.uploadVideo(mp4, { title, description });
+      return { platform: "tiktok", success: true, publishId: res.publishId, status: res.status };
+    })()
+  );
+  // Facebook (Page already configured via FACEBOOK_PAGE_ID/TOKEN)
+  tasks.push(
+    (async () => {
+      const { postToFacebookVideo } = require("./facebookVideo.js");
+      const res = await postToFacebookVideo(mp4, { title, description });
+      return { platform: "facebook", success: true, postId: res.postId, url: res.url };
+    })()
+  );
+
+  const settled = await Promise.allSettled(tasks);
+  return settled.map((o) => {
+    if (o.status === "fulfilled") return o.value;
+    const r = o.reason || {};
+    return { platform: r.platform || "unknown", success: false, error: r.message || String(r) };
+  });
+}
 
 function py(args, timeoutMs = 25 * 60 * 1000) {
   return new Promise((resolve, reject) => {
@@ -238,6 +274,13 @@ async function runOnce({ notify } = {}) {
       console.warn("[video] playlist add failed (video is live):", pe.message);
     }
 
+    // 3b. push the SAME Short to TikTok + Facebook (secondary platforms, non-fatal)
+    stage = "posting to TikTok and Facebook";
+    const platforms = await postToSecondaryPlatforms(mp4, { title, description });
+    for (const p of platforms) {
+      console.log(`[video] ${p.platform}:`, p.success ? (p.publishId || p.postId || "posted") : (p.skipped ? `skipped (${p.reason})` : `FAILED: ${p.error}`));
+    }
+
     // 4. record + state
     const post = {
       at: new Date().toISOString(),
@@ -249,6 +292,7 @@ async function runOnce({ notify } = {}) {
       playlistId,
       script: run.script,
       sizeMb: Math.round(sizeMb * 10) / 10,
+      platforms: platforms.reduce((acc, p) => { acc[p.platform] = p; return acc; }, {}),
     };
     const posts = loadPosts();
     posts.push(post);
@@ -258,7 +302,11 @@ async function runOnce({ notify } = {}) {
     bumpRotation(); // advance the 3-pillar rotation for the next post
     // Upload is done + recorded — remove the created video/audio/temp files.
     cleanupRunFiles(name, run);
-    if (notify) notify(`🎬 *New Short live* — ${title}\n${uploaded.url}\nCategory: ${category}\nTopic: ${topic}`);
+    const platLines = platforms
+      .filter((p) => !p.skipped)
+      .map((p) => (p.success ? `✅ ${p.platform}` : `⚠️ ${p.platform} failed`));
+    const platSummary = platLines.length ? `\n${platLines.join(" · ")}` : "";
+    if (notify) notify(`🎬 *New Short live* — ${title}\n${uploaded.url}\nCategory: ${category}\nTopic: ${topic}${platSummary}`);
     return post;
   } catch (err) {
     state.lastError = { at: new Date().toISOString(), stage, message: err.message };
