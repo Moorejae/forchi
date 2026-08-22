@@ -66,12 +66,33 @@ function setEnabled(on) {
   saveMode(m);
 }
 
+// Extract the actual exception from a python/tool error instead of the raw traceback.
+function cleanError(text) {
+  const lines = String(text || "").split("\n").map((s) => s.trim()).filter(Boolean);
+  if (!lines.length) return "unknown error";
+  const looks = /error|errno|no such|refused|timeout|permission|denied|missing|failed|exception|not found|unexpected/i;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (looks.test(lines[i])) return lines[i];
+  }
+  return lines[lines.length - 1];
+}
+
+// Human description of what the pipeline already attempted, per stage.
+const TRIED = {
+  "generating the video (script → voice → clips → assembly)": "I wrote the script, voiced it with the AI voice, picked the clips and assembled the video",
+  "quality-checking the video": "I generated the video and checked it before upload",
+  "uploading the video to YouTube": "I made the video and tried to upload it to YouTube",
+  "adding the video to its playlist": "I uploaded the video and tried to file it into its theme playlist",
+};
+
 function py(args, timeoutMs = 25 * 60 * 1000) {
   return new Promise((resolve, reject) => {
     execFile(VENV_PY, args, { cwd: BASE, timeout: timeoutMs, maxBuffer: 12 * 1024 * 1024 }, (err, stdout, stderr) => {
       if (err) {
-        const msg = (stderr || stdout || err.message).trim().split("\n").slice(-6).join(" | ");
-        reject(new Error(msg || err.message));
+        const raw = (stderr || stdout || err.message || "").trim();
+        const e = new Error(cleanError(raw) || err.message);
+        e.raw = raw;
+        reject(e);
       } else {
         resolve({ stdout, stderr });
       }
@@ -124,8 +145,10 @@ async function runOnce({ notify } = {}) {
   state.running = true;
   state.lastError = null;
   const name = "vm_" + Math.floor(Date.now() % 1000000);
+  let stage = "starting up";
   try {
     // 1. create the video (python orchestrator: script -> Higgs voice -> clips -> assemble)
+    stage = "generating the video (script → voice → clips → assembly)";
     const topic = nextTopic();
     const seed = Math.floor(Math.random() * 100000);
     await py([
@@ -134,6 +157,7 @@ async function runOnce({ notify } = {}) {
     ]);
 
     // 2. read run manifest + QA
+    stage = "quality-checking the video";
     const runPath = path.join(RUNS_DIR, name + "_run.json");
     const run = JSON.parse(fs.readFileSync(runPath, "utf8"));
     run.topic = topic;
@@ -145,6 +169,7 @@ async function runOnce({ notify } = {}) {
     if (wc < 40) throw new Error(`script too short (${wc} words)`);
 
     // 3. upload (YouTube API via youtube.js exports) + auto playlist by topic
+    stage = "uploading the video to YouTube";
     const youtube = require("./youtube.js");
     const { ensureTopicPlaylist, addVideoToPlaylist } = require("./playlists.js");
     const { buildTitle, buildDescription } = require("./metadata.js");
@@ -159,6 +184,7 @@ async function runOnce({ notify } = {}) {
     const uploaded = await youtube.uploadVideo(mp4, { title, description, tags, privacyStatus: "public" });
     let playlistId = null;
     try {
+      stage = "adding the video to its playlist";
       playlistId = await ensureTopicPlaylist(token, topic);
       await addVideoToPlaylist(token, playlistId, uploaded.videoId);
     } catch (pe) {
@@ -187,9 +213,18 @@ async function runOnce({ notify } = {}) {
     if (notify) notify(`🎬 *New Short live* — ${title}\n${uploaded.url}\nTopic: ${topic}`);
     return post;
   } catch (err) {
-    state.lastError = { at: new Date().toISOString(), stage: "runOnce", message: err.message };
+    state.lastError = { at: new Date().toISOString(), stage, message: err.message };
     state.consecutiveFailures += 1;
-    if (notify) notify(`⚠️ *Video workflow error* (fail #${state.consecutiveFailures}): ${err.message}`);
+    const tried = TRIED[stage] || "ran the video pipeline";
+    const lines = [
+      `Hey, the *video workflow* is down 😔`,
+      ``,
+      `*Issue:* ${err.message || "unknown"}`,
+      `*Stage:* ${stage}`,
+      `*What I tried that didn't work:* ${tried} — it failed at the "${stage}" step.`,
+    ];
+    if (state.consecutiveFailures > 1) lines.push(``, `This is failure #${state.consecutiveFailures} in a row.`);
+    if (notify) notify(lines.join("\n"));
     throw err;
   } finally {
     state.running = false;

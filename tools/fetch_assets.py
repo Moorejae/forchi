@@ -51,6 +51,7 @@ def main():
     )
     print("downloaded:", zip_path, f"({os.path.getsize(zip_path)/1048576:.1f} MB)")
 
+    # the stitcher's index (manifest.json) lives as its own file on the dataset
     seg = os.path.join(BASE, "media", "clips", "segments")
     instr = os.path.join(BASE, ".instrumental")
     os.makedirs(seg, exist_ok=True)
@@ -73,6 +74,19 @@ def main():
                 out = os.path.join(BASE, "media", "clips", "manifest.json")
                 with open(out, "wb") as f:
                     f.write(z.read(name))
+    # manifest.json (clip index) fetched separately from the dataset
+    try:
+        man = hf_hub_download(
+            repo_id=REPO,
+            filename="manifest.json",
+            repo_type="dataset",
+            token=token,
+            local_dir=os.path.join(BASE, "media", "clips"),
+        )
+        os.replace(man, os.path.join(BASE, "media", "clips", "manifest.json"))
+        print("manifest.json ->", os.path.join(BASE, "media", "clips", "manifest.json"))
+    except Exception as e:
+        print("manifest fetch skipped:", str(e).strip().splitlines()[-1])
     print("unpacked:", count, "->", seg, "and", instr)
     return 0
 
