@@ -18,7 +18,7 @@ const path = require("path");
 require("dotenv").config({ path: path.join(__dirname, "..", "..", "..", ".env") });
 
 const videoWorkflow = require("./index.js");
-const BASE = "c:\\Users\\hp\\forchi";
+const BASE = process.env.FORCHI_BASE || path.resolve(__dirname, "..", "..", "..");
 const MODE_FILE = path.join(BASE, "temp_media", "video_mode.json");
 const DEFAULT_MIN = 15;
 const DEFAULT_MAX = 50;

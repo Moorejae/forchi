@@ -9,6 +9,7 @@ Output: temp_media/<name>.mp4 (1080x1920, h264)
 """
 import os, subprocess, json, re, shutil
 import imageio_ffmpeg
+from _paths import BASE
 
 FF = imageio_ffmpeg.get_ffmpeg_exe()
 # reference caption style = script/handwritten bold-italic font (Ink Free / Segoe Script)
@@ -119,7 +120,7 @@ def assemble(phrases, phrase_wavs, clips, out_name, music=True, watermark=True, 
     music_track: optional explicit piano-lib track name (e.g. 'piano_romantic') to override mood pick.
     instrumental: optional explicit instrumental file path (from .instrumental) to force one track.
     """
-    work = r'c:\Users\hp\forchi\temp_media\assemble_build'
+    work = os.path.join(BASE, 'temp_media', 'assemble_build')
     os.makedirs(work, exist_ok=True)
 
     # copy the script font into the work dir -> relative fontfile (no path escaping)
@@ -225,7 +226,7 @@ def assemble(phrases, phrase_wavs, clips, out_name, music=True, watermark=True, 
                 build_bed(instrumental, total, bed, fade_out_st=fade_st)
                 print(f'  [asm] music: forced instrumental {os.path.basename(instrumental)} -> bed', flush=True)
             elif music_track:
-                build_bed(os.path.join(r'c:\Users\hp\forchi\media\music', music_track + '.wav'), total, bed, fade_out_st=fade_st)
+                build_bed(os.path.join(BASE, 'media', 'music', music_track + '.wav'), total, bed, fade_out_st=fade_st)
                 print(f'  [asm] music: {music_track} -> bed', flush=True)
             else:
                 instr = pick_instrumental()
@@ -282,7 +283,7 @@ def assemble(phrases, phrase_wavs, clips, out_name, music=True, watermark=True, 
 if __name__ == '__main__':
     import sys
     # quick demo: use an existing render if present
-    parts = r'c:\Users\hp\forchi\temp_media\higgs_parts'
+    parts = os.path.join(BASE, 'temp_media', 'higgs_parts')
     if os.path.exists(parts):
         import glob
         from _video_voice import split_phrases

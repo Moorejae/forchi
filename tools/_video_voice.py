@@ -10,6 +10,7 @@ Per phrase it synthesizes and returns the wav. Phrases are chunked by sentence.
 """
 import os, time, shutil, re
 from gradio_client import Client
+from _paths import BASE
 
 HIGGS_SPACE = "slymun/higgs-tts3"
 DEFAULT_VOICE = "Victor Moore (clean)"
@@ -18,7 +19,7 @@ WHISPER_REF_VOICE = "Whisper (user ref)"
 
 
 def _token():
-    for line in open(r'c:\Users\hp\forchi\.env', encoding='utf-8'):
+    for line in open(os.path.join(BASE, '.env'), encoding='utf-8'):
         if line.startswith('HF_ACCESS_TOKEN='):
             return line.split('=', 1)[1].strip().strip('"').strip("'")
     raise SystemExit('HF_ACCESS_TOKEN not found')
@@ -253,7 +254,7 @@ if __name__ == '__main__':
         "Because when the righteous finally fall, they teach the rest of us exactly what hell looks like."
     )
     mode = sys.argv[2] if len(sys.argv) > 2 else 'clean'
-    out = sys.argv[3] if len(sys.argv) > 3 else r'c:\Users\hp\forchi\temp_media\higgs_parts'
+    out = sys.argv[3] if len(sys.argv) > 3 else os.path.join(BASE, 'temp_media', 'higgs_parts')
     res = render_script(script, out, mode=mode)
     durs = durations([r['wav'] for r in res])
     print(f'  [higgs] total {sum(durs):.1f}s across {len(durs)} phrases')

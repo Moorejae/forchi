@@ -5,10 +5,11 @@ Generates 5-10 tracks (60s each) into media/music/ using additive piano synthesi
 """
 import numpy as np
 import wave, os, struct
+from _paths import BASE
 
 SR = 24000
 DUR = 60
-OUT_DIR = r'c:\Users\hp\forchi\media\music'
+OUT_DIR = os.path.join(BASE, 'media', 'music')
 os.makedirs(OUT_DIR, exist_ok=True)
 
 # note frequencies (A4=440)
@@ -139,7 +140,7 @@ def pick_for_phrases(phrases):
     return os.path.join(OUT_DIR, f'{track}.wav')
 
 
-INSTR_DIR = r'c:\Users\hp\forchi\.instrumental'
+INSTR_DIR = os.path.join(BASE, '.instrumental')
 
 
 def pick_instrumental():
@@ -147,7 +148,7 @@ def pick_instrumental():
     import random
     exts = ('.ogg', '.mp3', '.wav', '.m4a', '.flac', '.aac', '.opus')
     files = []
-    for d in (INSTR_DIR, r'c:\Users\hp\forchi\media\instrumental'):
+    for d in (INSTR_DIR, os.path.join(BASE, 'media', 'instrumental')):
         if os.path.isdir(d):
             for f in os.listdir(d):
                 if f.lower().endswith(exts):

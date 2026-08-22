@@ -4,7 +4,8 @@ Persona formula (from the docx blueprint):
   aphoristic open -> brutal subversion -> high-contrast imagery -> FINAL ANCHOR
 Lexicon: shadow, ego, contrast, graveyard, monster, morals, ruthless, wicked, hell...
 """
-import urllib.request, json, re
+import urllib.request, json, re, os
+from _paths import BASE
 
 PERSONA_PROMPT = """You are the writer for a philosophical YouTube Short channel. The persona is "Victor Moore" — a deep, slow, somber voice of reason who writes romantic, faith-tinged poetry about love and human nature.
 
@@ -57,7 +58,7 @@ Write ONE complete script now."""
 
 
 def _keys():
-    for line in open(r'c:\Users\hp\forchi\.env', encoding='utf-8'):
+    for line in open(os.path.join(BASE, '.env'), encoding='utf-8'):
         if line.startswith('GEMINI_KEYS='):
             return [k.strip() for k in line.split('=', 1)[1].strip().split(',') if k.strip()]
     return []
@@ -66,7 +67,7 @@ def _keys():
 # ── Anti-repetition memory ───────────────────────────────────────────────────
 # Every generated script is stored; new scripts are checked for n-gram overlap
 # with the history so ForChi never repeats a poem, a metaphor, or a closing line.
-HISTORY_PATH = r'c:\Users\hp\forchi\temp_media\script_history.json'
+HISTORY_PATH = os.path.join(BASE, 'temp_media', 'script_history.json')
 
 TOPICS = [
     'dating, romance and the ache of waiting',

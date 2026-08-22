@@ -7,7 +7,8 @@ const path = require("path");
 const videoWorkflow = require("./index.js");
 const autoMode = require("../../scheduler/autoMode.js");
 
-const MODE_FILE = "c:\\Users\\hp\\forchi\\temp_media\\video_mode.json";
+const BASE = process.env.FORCHI_BASE || path.resolve(__dirname, "..", "..", "..");
+const MODE_FILE = path.join(BASE, "temp_media", "video_mode.json");
 const DEFAULT_MIN = 15;
 const DEFAULT_MAX = 50;
 

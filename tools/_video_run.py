@@ -6,7 +6,7 @@ Usage:
 """
 import os, sys, argparse, json
 
-BASE = r'c:\Users\hp\forchi'
+from _paths import BASE
 
 
 def main():

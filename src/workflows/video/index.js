@@ -12,8 +12,10 @@ const { execFile } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
-const BASE = "c:\\Users\\hp\\forchi";
-const VENV_PY = path.join(BASE, ".venv", "Scripts", "python.exe");
+const BASE = process.env.FORCHI_BASE || path.resolve(__dirname, "..", "..", "..");
+const VENV_PY = process.platform === "win32"
+  ? path.join(BASE, ".venv", "Scripts", "python.exe")
+  : path.join(BASE, ".venv", "bin", "python");
 const MODE_FILE = path.join(BASE, "temp_media", "video_mode.json");
 const POSTS_FILE = path.join(BASE, "temp_media", "video_posts.json");
 const RUNS_DIR = path.join(BASE, "temp_media");

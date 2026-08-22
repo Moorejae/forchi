@@ -4,9 +4,10 @@ Picks one clip segment per phrase, oscillating cool<->warm and dark<->bright,
 matching mood to phrase sentiment, avoiding repeats (freshness) and drops.
 """
 import json, os, random
+from _paths import BASE
 
-MANIFEST = r'c:\Users\hp\forchi\media\clips\manifest.json'
-SEGMENTS_DIR = r'c:\Users\hp\forchi\media\clips\segments'
+MANIFEST = os.path.join(BASE, 'media', 'clips', 'manifest.json')
+SEGMENTS_DIR = os.path.join(BASE, 'media', 'clips', 'segments')
 
 
 def load_pool(seed=None):

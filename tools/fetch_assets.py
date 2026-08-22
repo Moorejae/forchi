@@ -15,7 +15,7 @@ os.environ["HF_HUB_DISABLE_XET"] = "1"  # must be before huggingface_hub import
 
 from huggingface_hub import hf_hub_download  # noqa: E402
 
-BASE = r"c:\Users\hp\forchi"  # override on a VPS with the app dir
+from _paths import BASE  # repo root, override with FORCHI_BASE env on a VPS
 REPO = "slymun/forchi-assets"
 REMOTE_PATH = "assets_bundle.zip"
 

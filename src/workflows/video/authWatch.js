@@ -16,7 +16,7 @@
 const fs = require("fs");
 const path = require("path");
 
-const BASE = "c:\\Users\\hp\\forchi";
+const BASE = process.env.FORCHI_BASE || path.resolve(__dirname, "..", "..", "..");
 const STATE_FILE = path.join(BASE, "temp_media", "youtube_auth_state.json");
 const EXPIRY_DAYS = 7;            // Google: unverified apps get 7-day refresh tokens
 const WARN_DAYS = 6;              // warn 1 day before expiry
