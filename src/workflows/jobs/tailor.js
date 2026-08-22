@@ -54,6 +54,7 @@ REQUIREMENTS:
 
 HARD RULES:
 - Keep EVERY fact real. Never invent employers, titles, years, numbers, projects, or URLs. Only the profile + portfolio facts below may be used.
+- LEVEL POSITIONING: the candidate is applying for INTERN / JUNIOR / INTERMEDIATE roles. Present him as a fast, self-driven builder with real shipped projects who is actively learning from senior engineers. NEVER claim senior-level experience, never inflate years, never say "led a team", never say "10+ years". Highlight real ownership of shipped builds plus genuine eagerness to learn — that honesty is what makes a junior/intermediate candidate credible.
 - LANGUAGE: The job description is in ${lang}. Write the ENTIRE tailored resume in ${lang} (the candidate's real facts are given in English — translate them faithfully). Do NOT mix languages.
 - Plain text only: no markdown symbols, no hashtags, no tables, no bullets with asterisks or dashes. Use clean lines.
 - ONE PAGE: keep it tight — summary max 2 sentences, skills 3-4 compact lines, each project max 2 short bullets, each experience entry max 2 short lines, certifications 1 line each. Shorten until it fits one US Letter page.

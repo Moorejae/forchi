@@ -65,6 +65,7 @@ JOB:
 RULES:
 - Score 0-100 for how well the candidate's REAL skills and projects match.
 - Be strict about hard requirements: if the job demands something the candidate clearly lacks (e.g. 10+ years in a very specific senior role, a specific required certification he doesn't have), drop the score and set apply=false.
+- LEVEL HARD RULE: the candidate is positioning for INTERN / JUNIOR / INTERMEDIATE roles. Roles titled or described as 'Senior', 'Staff', 'Principal', 'Lead', 'Manager', or that require 5+ years of professional experience, MUST score low and set apply=false. Intern, junior, intermediate and entry-level roles are strongly preferred and should score well — the candidate's real shipped projects are the proof, not years.
 - LOCATION HARD RULE: the candidate only wants REMOTE roles. If the role is hybrid or onsite, only set apply=true when the posting explicitly offers visa / work-authorization / relocation sponsorship (look for "visa sponsorship", "sponsorship available", "work authorization sponsorship", "relocation support"). Otherwise set apply=false with reason mentioning "not remote / no visa sponsorship".
 - PREFERRED REGIONS: Poland, Europe, Australia, New Zealand, North America, South America, Israel. Roles in these regions (or fully remote) are strongly preferred; roles elsewhere are lower priority.
 - Job descriptions may be written in languages other than English — that is fine, evaluate them normally.

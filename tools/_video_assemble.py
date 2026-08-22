@@ -24,7 +24,7 @@ FONT_CANDIDATES = [
     '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
 ]
 WATERMARK = 'Victor Moore'
-MAX_SEC = 50.0  # hard cap for YouTube Shorts
+MAX_SEC = 58.0  # hard cap for YouTube Shorts (60s max, keep 2s headroom)
 
 # map font file -> libass family name
 FONT_FAMILY = {
@@ -145,7 +145,7 @@ def assemble(phrases, phrase_wavs, clips, out_name, music=True, watermark=True, 
     # 1. phrase durations + 0.35s inter-phrase gap; compute starts
     durs = [probe_dur(w) for w in phrase_wavs]
     gap = 0.35
-    TAIL = 2.0  # seconds of silence after the final word (clean closure)
+    TAIL = 1.5  # seconds of silence after the final word (clean closure)
     starts = []
     t = 0.0
     for d in durs:

@@ -42,15 +42,19 @@ def main():
     wavs = [r['wav'] for r in res]
     durs = durations(wavs)
 
-    # 2b. enforce 50s max: trim trailing phrases if narration exceeds 47s
-    MAX_NARR = 47.0
+    # 2b. enforce max duration: if narration is too long, trim INTERIOR phrases
+    # so the opening AND the final anchor line always survive (never end mid-poem).
+    MAX_NARR = 54.0  # slow baritone pace; leaves room under the 58s cap
     total_narr = sum(durs)
     while total_narr > MAX_NARR and len(phrases) > 2:
-        phrases.pop()
-        wavs.pop()
-        durs.pop()
+        # drop a middle interior phrase (keep the first + last sentence)
+        idx = 1 + (len(phrases) - 2) // 2
+        phrases.pop(idx)
+        wavs.pop(idx)
+        durs.pop(idx)
         total_narr = sum(durs)
-        print(f'[run] narration {total_narr:.1f}s > cap -> trimmed to {len(phrases)} phrases')
+        print(f'[run] narration {total_narr:.1f}s > cap -> trimmed interior to '
+              f'{len(phrases)} phrases')
     print(f'[run] narration {total_narr:.1f}s, {len(phrases)} phrases')
 
     # 3. stitch clips

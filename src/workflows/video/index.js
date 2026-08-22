@@ -20,19 +20,43 @@ const MODE_FILE = path.join(BASE, "temp_media", "video_mode.json");
 const POSTS_FILE = path.join(BASE, "temp_media", "video_posts.json");
 const RUNS_DIR = path.join(BASE, "temp_media");
 
-// Niche topics — MUST stay in sync with tools/_video_script.py TOPICS
-const TOPICS = [
-  "dating, romance and the ache of waiting",
-  "what we owe the people we love",
-  "grace, faith and forgiveness",
-  "the quiet work of a lasting relationship",
-  "why we lie to ourselves about love",
-  "christian hope in a broken world",
-  "the courage of staying when it is hard",
-  "human behavior and the masks we wear",
-  "love that outlasts time",
-  "the cost of virtue and the weight of empathy",
+// Three posting pillars (rotate 1 → 2 → 3 → 1…). MUST stay in sync with
+// tools/_video_script.py TOPICS.
+const TOPIC_CATEGORIES = [
+  {
+    label: "Romance & Relationship",
+    topics: [
+      "dating, romance and the ache of waiting",
+      "what we owe the people we love",
+      "the quiet work of a lasting relationship",
+      "why we lie to ourselves about love",
+      "love that outlasts time",
+    ],
+  },
+  {
+    label: "Life & Philosophy",
+    topics: [
+      "human behavior and the masks we wear",
+      "the cost of virtue and the weight of empathy",
+      "the courage of staying when it is hard",
+      "the illusion of safety and the tyranny of tomorrow",
+      "outgrowing what no longer fits",
+    ],
+  },
+  {
+    label: "Family & Christian Moral",
+    topics: [
+      "grace, faith and forgiveness",
+      "christian hope in a broken world",
+      "family, faith and the weight of duty",
+      "forgiveness as a discipline",
+      "the quiet sacrifice that holds the world together",
+    ],
+  },
 ];
+
+// Flat list kept for backwards-compat exports.
+const TOPICS = TOPIC_CATEGORIES.flatMap((c) => c.topics);
 
 const state = {
   enabled: false,
@@ -100,11 +124,30 @@ function py(args, timeoutMs = 25 * 60 * 1000) {
   });
 }
 
+function rotationIndex() {
+  try {
+    const m = JSON.parse(fs.readFileSync(MODE_FILE, "utf8"));
+    return Number(m.topicCategoryIdx) || 0;
+  } catch { return 0; }
+}
+
+function bumpRotation() {
+  try {
+    const m = JSON.parse(fs.readFileSync(MODE_FILE, "utf8")) || {};
+    m.topicCategoryIdx = (rotationIndex() + 1) % TOPIC_CATEGORIES.length;
+    fs.writeFileSync(MODE_FILE, JSON.stringify(m, null, 2));
+  } catch {}
+}
+
 function nextTopic() {
   const posts = loadPosts();
   const used = new Set(posts.map((p) => p.topic).filter(Boolean));
-  for (const t of TOPICS) if (!used.has(t)) return t;
-  return TOPICS[posts.length % TOPICS.length];
+  // rotate the 3 pillars, then pick the least-recently-used topic inside it
+  const cat = TOPIC_CATEGORIES[rotationIndex() % TOPIC_CATEGORIES.length];
+  let topic = null;
+  for (const t of cat.topics) if (!used.has(t)) { topic = t; break; }
+  if (!topic) topic = cat.topics[posts.length % cat.topics.length];
+  return { topic, category: cat.label };
 }
 
 // Storage hygiene: once a Short is uploaded + recorded, delete the created
@@ -149,7 +192,9 @@ async function runOnce({ notify } = {}) {
   try {
     // 1. create the video (python orchestrator: script -> Higgs voice -> clips -> assemble)
     stage = "generating the video (script → voice → clips → assembly)";
-    const topic = nextTopic();
+    const nt = nextTopic();
+    const topic = nt.topic;
+    const category = nt.category;
     const seed = Math.floor(Math.random() * 100000);
     await py([
       path.join("tools", "_video_run.py"),
@@ -161,6 +206,7 @@ async function runOnce({ notify } = {}) {
     const runPath = path.join(RUNS_DIR, name + "_run.json");
     const run = JSON.parse(fs.readFileSync(runPath, "utf8"));
     run.topic = topic;
+    run.category = category;
     const mp4 = run.output;
     if (!mp4 || !fs.existsSync(mp4)) throw new Error("assembled mp4 missing");
     const sizeMb = fs.statSync(mp4).size / 1048576;
@@ -168,7 +214,7 @@ async function runOnce({ notify } = {}) {
     const wc = (run.script || "").split(/\s+/).filter(Boolean).length;
     if (wc < 40) throw new Error(`script too short (${wc} words)`);
 
-    // 3. upload (YouTube API via youtube.js exports) + auto playlist by topic
+    // 3. upload (YouTube API via youtube.js exports) + auto playlist by CATEGORY
     stage = "uploading the video to YouTube";
     const youtube = require("./youtube.js");
     const { ensureTopicPlaylist, addVideoToPlaylist } = require("./playlists.js");
@@ -185,7 +231,7 @@ async function runOnce({ notify } = {}) {
     let playlistId = null;
     try {
       stage = "adding the video to its playlist";
-      playlistId = await ensureTopicPlaylist(token, topic);
+      playlistId = await ensureTopicPlaylist(token, category);
       await addVideoToPlaylist(token, playlistId, uploaded.videoId);
     } catch (pe) {
       // playlist failure should not fail the whole post (video is already live)
@@ -199,6 +245,7 @@ async function runOnce({ notify } = {}) {
       url: uploaded.url,
       videoId: uploaded.videoId,
       topic,
+      category,
       playlistId,
       script: run.script,
       sizeMb: Math.round(sizeMb * 10) / 10,
@@ -208,9 +255,10 @@ async function runOnce({ notify } = {}) {
     savePosts(posts);
     state.lastPost = post;
     state.consecutiveFailures = 0;
+    bumpRotation(); // advance the 3-pillar rotation for the next post
     // Upload is done + recorded — remove the created video/audio/temp files.
     cleanupRunFiles(name, run);
-    if (notify) notify(`🎬 *New Short live* — ${title}\n${uploaded.url}\nTopic: ${topic}`);
+    if (notify) notify(`🎬 *New Short live* — ${title}\n${uploaded.url}\nCategory: ${category}\nTopic: ${topic}`);
     return post;
   } catch (err) {
     state.lastError = { at: new Date().toISOString(), stage, message: err.message };

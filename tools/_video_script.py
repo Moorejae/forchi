@@ -17,11 +17,10 @@ The channel owner's own writing style (study these, mirror the rhythm and intima
 
 Voice qualities to copy: first-person, intimate, flowing long sentences mixed with short punches; tender metaphors (sleep/death/light/shadow/quiet/faith); direct address to "you"; melancholy warmth, never cold, never preachy.
 
-THEME NICHES (blend 1-2 per script, always under the philosophical/poetic voice):
-- DATING & ROMANCE: first love, devotion, longing, the ache of waiting, loving someone through the years.
-- RELATIONSHIPS: what we owe each other, forgiveness, staying when it is hard, the quiet work of love.
-- CHRISTIAN MORALS: grace, redemption, faith as strength, loving thy neighbor, humility, the cost of virtue.
-- HUMAN BEHAVIOR: why we lie to ourselves, the stories we tell to survive, fear disguised as caution, the masks we wear.
+THEME NICHES — three posting pillars (blend 1-2 per script, always under the philosophical/poetic voice):
+- ROMANCE & RELATIONSHIP: dating, first love, devotion, longing, the ache of waiting, what we owe the people we love, staying when it is hard, the quiet work of love, love that outlasts time.
+- LIFE & PHILOSOPHY: why we lie to ourselves, the stories we tell to survive, fear disguised as caution, the masks we wear, the illusion of safety and the tyranny of tomorrow, outgrowing what no longer fits, the cost of virtue.
+- FAMILY & CHRISTIAN MORAL: grace, redemption, faith as strength, loving thy neighbor, humility, family and the weight of duty, forgiveness as a discipline, christian hope in a broken world, the quiet sacrifice that holds the world together.
 
 THE VICTOR MOORE LINGUISTIC & PSYCHOLOGICAL BLUEPRINT:
 CORE TENETS (draw from them):
@@ -69,17 +68,27 @@ def _keys():
 # with the history so ForChi never repeats a poem, a metaphor, or a closing line.
 HISTORY_PATH = os.path.join(BASE, 'temp_media', 'script_history.json')
 
+# Three posting pillars (must stay in sync with src/workflows/video/index.js
+# TOPIC_CATEGORIES): Romance & Relationship / Life & Philosophy / Family & Christian Moral
 TOPICS = [
+    # Romance & Relationship
     'dating, romance and the ache of waiting',
     'what we owe the people we love',
-    'grace, faith and forgiveness',
     'the quiet work of a lasting relationship',
     'why we lie to ourselves about love',
-    'christian hope in a broken world',
-    'the courage of staying when it is hard',
-    'human behavior and the masks we wear',
     'love that outlasts time',
+    # Life & Philosophy
+    'human behavior and the masks we wear',
     'the cost of virtue and the weight of empathy',
+    'the courage of staying when it is hard',
+    'the illusion of safety and the tyranny of tomorrow',
+    'outgrowing what no longer fits',
+    # Family & Christian Moral
+    'grace, faith and forgiveness',
+    'christian hope in a broken world',
+    'family, faith and the weight of duty',
+    'forgiveness as a discipline',
+    'the quiet sacrifice that holds the world together',
 ]
 
 

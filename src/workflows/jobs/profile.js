@@ -9,7 +9,7 @@ const PROFILE = {
   linkedin: "linkedin.com/in/aguchiedoxie",
   github: "github.com/Moorejae",
   summary:
-    "I build cloud infrastructure and AI systems, alone or with a team. I build fast, usually in days rather than months. Security is part of the design from day one, not added later.",
+    "I build cloud infrastructure and AI systems, alone or with a team, fast — usually in days rather than months. Much of what I know came from deep research and from shipping real things end-to-end, and I'm actively learning from stronger engineers every day. I'm applying for intern, junior and intermediate roles where I can ship real work and keep growing.",
   skills: {
     cloud: [
       "AWS", "Azure", "Oracle Cloud (OCI)", "Google Cloud", "Linux (Ubuntu)", "Nginx",
@@ -26,19 +26,18 @@ const PROFILE = {
     data: ["Python (FastAPI, Asyncio)", "Node.js", "PostgreSQL", "RESTful APIs", "n8n workflow automation"],
     web3: ["Aptos MoveVM", "Move smart contracts", "non-custodial escrow design"],
   },
-  // The agent hunts for these kinds of roles (locked in the blueprint).
-  // As a Cloud & AI Systems Engineer, the user is also qualified for AI
-  // INTEGRATION and AI AUTOMATION roles (wiring LLMs into products, building
-  // agent pipelines, trigger-based automation) — those are exactly what ForChi
-  // itself is.
+  // The agent hunts for these kinds of roles. Positioning: intern / junior /
+  // intermediate — a large part of the skill set is research-driven and
+  // self-trained, and the user explicitly wants to keep learning from others.
   targetRoles: [
-    "AI / LLM Engineer",
-    "AI Integration Engineer",
-    "AI Automation Engineer",
-    "AI Solutions Engineer",
-    "Cloud / DevOps Engineer",
-    "Automation Engineer",
-    "Backend Developer (Node.js / Python)",
+    "AI / LLM Engineer (Junior / Intermediate)",
+    "AI Integration Engineer (Junior / Intermediate)",
+    "AI Automation Engineer (Junior / Intermediate)",
+    "AI Solutions Engineer (Junior / Intermediate)",
+    "Cloud / DevOps Engineer (Junior / Intermediate)",
+    "Automation Engineer (Junior / Intermediate)",
+    "Backend Developer Intern / Junior (Node.js / Python)",
+    "AI / ML Intern",
   ],
   // Application identity — real, used only to fill ATS forms.
   identity: {
@@ -71,8 +70,10 @@ const PROFILE = {
       years: "2026 – Present",
       bullets: [
         "Built and shipped a trigger-only Node.js/LangChain agent that posts to Facebook and LinkedIn automatically, using a two-step gate-and-extraction pipeline so casual chat never accidentally fires a workflow",
-        "Designed a multi-tier LLM fallback (Gemini key rotation with a self-hosted model as backup) to stay responsive under free-tier rate limits",
+        "Designed a multi-tier LLM fallback (Gemini key rotation with a self-hosted Qwen model as backup) to stay responsive under free-tier rate limits",
         "Added voice-note handling and a multi-stage AI image generation pipeline, styled differently per platform",
+        "Built an automated YouTube Shorts pipeline (AI poem → cloned voice → stock clips → assembly → upload → playlist) posting ~5 Shorts/day with topic rotation across 3 pillars: romance, philosophy, and faith",
+        "Set up OAuth-based YouTube auth with an automatic weekly re-auth watcher, plus human-friendly self-healing error reports delivered by the bot itself",
       ],
     },
     {
@@ -97,12 +98,23 @@ const PROFILE = {
     },
     {
       role: "Systems Developer",
-      company: "Footchristo — sports prediction engine (live 24/7 Telegram bot)",
+      company: "Flamchi / Footchristo — sports prediction engine (live 24/7 Telegram bot)",
       years: "2024 – 2026",
       bullets: [
         "Built a sports prediction engine for football, basketball, and tennis using association-rule mining, discarding six earlier approaches that failed on unseen data",
         "Every rule validated on a blind, never-touched data window: 69.6% football, 66.8% NBA, 69.8% tennis; refuses to predict when no validated pattern matches",
-        "Deployed as a live 24/7 Telegram bot on Render, Hugging Face, and a self-hosted LLM",
+        "Latest 'Odonata dragonfly' ruleset: 950 football / 1,927 basketball / 1,495 tennis blind-validated rules",
+        "Ships one weekly digest per sport (time · teams · projected winner) and explains WHY a pick was made via a Qwen-powered chat bot",
+      ],
+    },
+    {
+      role: "Builder — Self-Hosting & Automation",
+      company: "Infrastructure (Contabo VPS, systemd, Hugging Face)",
+      years: "2026",
+      bullets: [
+        "Migrated all production services from Render to a self-managed Contabo VPS: systemd units with auto-restart, scheduled timers, and a Telegram-driven health watchdog",
+        "Self-hosted a local Qwen3 4B LLM (llama.cpp) on the VPS as the always-on chat fallback, cutting cold-start latency from minutes to seconds",
+        "Distributed 148MB of media assets via a private Hugging Face dataset with a pull-on-deploy bundle so any host boots the full pipeline",
       ],
     },
   ],
