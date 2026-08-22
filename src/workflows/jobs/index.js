@@ -5,7 +5,7 @@ const { scoreJob, isLocationAllowed, isIndianJob } = require("./matcher");
 const { researchCompany } = require("./researcher");
 const { writeApplication } = require("./writer");
 const { tailorResume } = require("./tailor");
-const { submitApplication, AUTO_APPLY, DAILY_CAP } = require("./applyEngine");
+const { submitApplication, AUTO_APPLY, DAILY_CAP, getCoverLetterBuffer } = require("./applyEngine");
 const { sendMatchEmail } = require("./emailer");
 
 const MAX_PER_RUN = Number(process.env.JOBS_MAX_PER_RUN || 40);
@@ -99,9 +99,16 @@ async function prepareAndSubmit(job) {
   // Pass the research so the resume's EXPERIENCE section can relate each real
   // build to THIS company's vision (proof the JD was read).
   const tailored = await tailorResume(job, research);
+  // Persist the cover letter as a PDF too (archive in the application record).
+  let coverLetterPdf = null;
+  if (app.coverLetter) {
+    try { coverLetterPdf = (await getCoverLetterBuffer(app.coverLetter))?.toString("base64"); }
+    catch (e) { console.warn("[Jobs] cover letter PDF store failed:", e.message); }
+  }
   await db.storeApplication({
     jobId: job.id,
     coverLetter: app.coverLetter,
+    coverLetterPdf,
     answers: app.answers,
     resumeTailored: tailored,
     companyResearch: research,

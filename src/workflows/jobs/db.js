@@ -38,6 +38,7 @@ const SQLITE_DDL = `
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       job_id INTEGER NOT NULL UNIQUE,
       cover_letter TEXT,
+      cover_letter_pdf TEXT,
       answers TEXT,
       resume_tailored TEXT,
       company_research TEXT,
@@ -83,6 +84,7 @@ const PG_DDL = `
       id BIGSERIAL PRIMARY KEY,
       job_id BIGINT NOT NULL UNIQUE,
       cover_letter TEXT,
+      cover_letter_pdf TEXT,
       answers TEXT,
       resume_tailored TEXT,
       company_research TEXT,
@@ -119,6 +121,8 @@ async function openSqlite() {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   const db = await open({ filename: path.resolve(dbFile), driver: sqlite3.Database });
   await db.exec(SQLITE_DDL);
+  // Migrations for pre-existing databases (idempotent — ignore 'duplicate column').
+  try { await db.exec("ALTER TABLE applications ADD COLUMN cover_letter_pdf TEXT"); } catch (e) {}
   console.log("[JobsDB] SQLite initialized at", path.resolve(dbFile));
   return {
     run: (...a) => db.run(...a),
@@ -171,6 +175,8 @@ async function openPostgres() {
       });
       await c.connect();
       await c.query(PG_DDL);
+      // Migration for pre-existing databases (idempotent — ignore 'duplicate column').
+      try { await c.query("ALTER TABLE applications ADD COLUMN IF NOT EXISTS cover_letter_pdf TEXT"); } catch (e) {}
       client = c;
       console.log("[JobsDB] PostgreSQL connected (persistent across deploys).");
       return c;
@@ -271,17 +277,18 @@ async function setJobScore(id, score) {
 }
 
 // Store a prepared application (never applied yet). job_id UNIQUE enforces never-twice.
-async function storeApplication({ jobId, coverLetter, answers, resumeTailored, companyResearch }) {
+async function storeApplication({ jobId, coverLetter, coverLetterPdf, answers, resumeTailored, companyResearch }) {
   const db = await getJobsDB();
   await db.run(
-    `INSERT INTO applications (job_id, cover_letter, answers, resume_tailored, company_research, submitted)
-     VALUES (?, ?, ?, ?, ?, 0)
+    `INSERT INTO applications (job_id, cover_letter, cover_letter_pdf, answers, resume_tailored, company_research, submitted)
+     VALUES (?, ?, ?, ?, ?, ?, 0)
      ON CONFLICT(job_id) DO UPDATE SET
        cover_letter = excluded.cover_letter,
+       cover_letter_pdf = excluded.cover_letter_pdf,
        answers = excluded.answers,
        resume_tailored = excluded.resume_tailored,
        company_research = excluded.company_research`,
-    [jobId, coverLetter || null, answers ? JSON.stringify(answers) : null, resumeTailored || null, companyResearch || null]
+    [jobId, coverLetter || null, coverLetterPdf || null, answers ? JSON.stringify(answers) : null, resumeTailored || null, companyResearch || null]
   );
 }
 
