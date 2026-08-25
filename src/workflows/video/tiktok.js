@@ -7,11 +7,12 @@
 //
 // TikTok OAuth (Content Posting API):
 //   authorize : https://www.tiktok.com/v2/auth/authorize/?client_key=...&scope=user.info.basic,video.publish&response_type=code&redirect_uri=...
-//   token     : POST https://open-api.tiktok.com/v2/oauth/token/   (authorization_code | refresh_token)
-//   publish   : POST https://open-api.tiktok.com/v2/post/publish/video/init/  -> { upload_url, publish_id }
+//   token     : POST https://open.tiktokapis.com/v2/oauth/token/   (authorization_code | refresh_token)
+//   publish   : POST https://open.tiktokapis.com/v2/post/publish/video/init/  -> { upload_url, publish_id }
 //               PUT  {upload_url}  (video bytes)
-//               POST https://open-api.tiktok.com/v2/post/publish/status/fetch/ -> { status }
-// (open.tiktok.com was deprecated — returns 404 "TLB"; all API calls use open-api.tiktok.com)
+//               POST https://open.tiktokapis.com/v2/post/publish/status/fetch/ -> { status }
+// (open.tiktok.com is dead - 404 "TLB". The docs now use open.tiktokapis.com;
+//  open-api.tiktok.com is a legacy alias that returns server_error on real exchanges.)
 require("dotenv").config({ path: require("path").join(__dirname, "..", "..", "..", ".env") });
 const fs = require("fs");
 const path = require("path");
@@ -22,10 +23,10 @@ const readline = require("readline");
 const CLIENT_KEY = process.env.TIKTOK_CLIENT_KEY || process.env.Client_key;
 const CLIENT_SECRET = process.env.TIKTOK_CLIENT_SECRET || process.env.Client_secret;
 const REDIRECT = process.env.TIKTOK_CALLBACK_URL || "http://localhost:7860/tiktok_callback";
-// NOTE: TikTok deprecated the open.tiktok.com API host (returns 404 "TLB").
-// All API calls (token exchange, publish init, status fetch) must use
-// open-api.tiktok.com. The user-facing authorize page stays on www.tiktok.com.
-const TOKEN_URL = "https://open-api.tiktok.com/v2/oauth/token/";
+// NOTE: open.tiktok.com is dead (404 "TLB"). The docs now use open.tiktokapis.com.
+// (open-api.tiktok.com is a legacy alias that returns server_error on real code
+//  exchanges, so do NOT switch back.) The authorize page stays on www.tiktok.com.
+const TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/";
 const SCOPES = "user.info.basic,video.publish";
 
 function consentUrl() {
@@ -132,7 +133,7 @@ async function uploadVideo(filePath, { title, description, privacyLevel = "PUBLI
 
   // 1. initialize the publish
   const initRes = await fetch(
-    `https://open-api.tiktok.com/v2/post/publish/video/init/?access_token=${encodeURIComponent(token)}`,
+    `https://open.tiktokapis.com/v2/post/publish/video/init/?access_token=${encodeURIComponent(token)}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -175,7 +176,7 @@ async function uploadVideo(filePath, { title, description, privacyLevel = "PUBLI
 async function checkStatus(token, publishId) {
   try {
     const res = await fetch(
-      `https://open-api.tiktok.com/v2/post/publish/status/fetch/?access_token=${encodeURIComponent(token)}`,
+      `https://open.tiktokapis.com/v2/post/publish/status/fetch/?access_token=${encodeURIComponent(token)}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
