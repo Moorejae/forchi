@@ -42,7 +42,7 @@ services:
       - key: ZEROGPU_ENDPOINT
         value: https://slymun-forchi-img.hf.space
       - key: YOUTUBE_CALLBACK_URL
-        value: https://forchi.onrender.com/oauth2callback
+        value: https://forchi.myzelva.com/oauth2callback
       - key: TIKTOK_CLIENT_KEY
         sync: false
       - key: TIKTOK_CLIENT_SECRET
