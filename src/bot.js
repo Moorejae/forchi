@@ -23,6 +23,7 @@ const jobsNotify = require("./workflows/jobs/notifyTarget");
 const videoWorkflow = require("./workflows/video/index");
 const videoScheduler = require("./workflows/video/scheduler");
 const authWatch = require("./workflows/video/authWatch");
+const tiktokAuthWatch = require("./workflows/video/tiktokAuthWatch");
 
 // Force IPv4 for DNS resolution (avoids IPv6 timeouts in containers)
 if (dns.setDefaultResultOrder) dns.setDefaultResultOrder("ipv4first");
@@ -102,6 +103,7 @@ db.getDB()
     jobsScheduler.startJobsScheduler({ bot });
     videoScheduler.initVideoScheduler({ notify: (t) => jobsNotify.sendMessage(t) });
     authWatch.startAuthWatch({ notify: (t) => jobsNotify.sendMessage(t) });
+    tiktokAuthWatch.startTikTokAuthWatch({ notify: (t) => jobsNotify.sendMessage(t) });
   })
   .catch((err) => console.error("[DB Error]", err.message));
 
@@ -254,7 +256,12 @@ async function handleIncomingText(ctx, text) {
         : "token ✅")
       : `MISSING ⛔ — say "youtube auth" to get the approve link`;
     const ttOk = !!(await require("./workflows/video/tokenStore.js").getTikTokToken().catch(() => null));
-    const ttLine = ttOk ? "token ✅" : `MISSING ⛔ — say "tiktok auth" to get the approve link`;
+    const tta = await tiktokAuthWatch.getAuthState();
+    const ttLine = tta.tokenPresent
+      ? (tta.hoursLeft != null
+        ? `token ✅ · expires ~${Math.max(0, Math.floor(tta.hoursLeft / 24))}d ${Math.max(0, tta.hoursLeft % 24)}h · say "tiktok auth" to re-link anytime`
+        : "token ✅")
+      : `MISSING ⛔ — say "tiktok auth" to get the approve link`;
     const fbOk = !!(process.env.FACEBOOK_PAGE_ID && (process.env.FACEBOOK_PAGE_TOKEN || process.env.FACEBOOK_PAGE_ACCESS_TOKEN));
     const lines = [
       `🎬 *ForChi video workflow*`,

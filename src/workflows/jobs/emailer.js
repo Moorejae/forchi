@@ -144,4 +144,43 @@ async function sendMatchEmail(job, { coverLetter, resumeTailored }) {
   return false;
 }
 
-module.exports = { sendMatchEmail, configured };
+// Send a short plain-text email (used by the TikTok auth watcher for re-consent
+// links, where Telegram can mangle long URLs). Resend first, SMTP fallback.
+async function sendSimpleEmail({ subject, text }) {
+  if (!configured()) {
+    console.warn("[Emailer] not configured — skipping simple email");
+    return false;
+  }
+  if (await sendViaResend({ to: TO, subject, text })) return true;
+  const candidates = [
+    { host: SMTP_HOST, port: 587, secure: false },
+    { host: SMTP_HOST, port: 465, secure: true },
+    { host: SMTP_HOST, port: 2525, secure: false },
+  ];
+  const mail = { from: `"ForChi" <${SMTP_USER}>`, to: TO, subject, text };
+  let lastErr = null;
+  for (const c of candidates) {
+    try {
+      const transporter = nodemailer.createTransport({
+        host: c.host,
+        port: c.port,
+        secure: c.secure,
+        family: 4,
+        auth: { user: SMTP_USER, pass: SMTP_PASS },
+        connectionTimeout: 15000,
+        greetingTimeout: 15000,
+        socketTimeout: 30000,
+      });
+      await transporter.sendMail(mail);
+      console.log(`[Emailer] ✅ simple email -> ${TO} (port ${c.port})`);
+      return true;
+    } catch (e) {
+      lastErr = e;
+      console.warn(`[Emailer] port ${c.port} failed (${e.message.slice(0, 80)}) — trying next…`);
+    }
+  }
+  console.warn(`[Emailer] ❌ simple email failed: ${lastErr ? lastErr.message : "no candidates"}`);
+  return false;
+}
+
+module.exports = { sendMatchEmail, sendSimpleEmail, configured };

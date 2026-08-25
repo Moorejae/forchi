@@ -65,6 +65,7 @@ async function refreshAccess() {
   await ts.setTikTokToken(data.access_token);
   await ts.setTikTokAuthedAt(Date.now());
   if (data.refresh_token) await ts.setTikTokRefreshToken(data.refresh_token);
+  if (data.refresh_expires_in) await ts.setTikTokRefreshExpiresIn(data.refresh_expires_in);
   return data.access_token;
 }
 
@@ -74,6 +75,7 @@ async function saveTokens(tokens) {
   try { await ts.setTikTokToken(tokens.access_token); } catch (e) { /* non-fatal */ }
   try { if (tokens.refresh_token) await ts.setTikTokRefreshToken(tokens.refresh_token); } catch (e) { /* non-fatal */ }
   try { if (tokens.open_id) await ts.setTikTokOpenId(tokens.open_id); } catch (e) { /* non-fatal */ }
+  try { if (tokens.refresh_expires_in) await ts.setTikTokRefreshExpiresIn(tokens.refresh_expires_in); } catch (e) { /* non-fatal */ }
   try { await ts.setTikTokAuthedAt(Date.now()); } catch (e) { /* non-fatal */ }
   // best-effort .env write (for local runs; container has no writable .env)
   try {
@@ -89,6 +91,7 @@ async function saveTokens(tokens) {
     add("TIKTOK_ACCESS_TOKEN", tokens.access_token);
     if (tokens.refresh_token) add("TIKTOK_REFRESH_TOKEN", tokens.refresh_token);
     if (tokens.open_id) add("TIKTOK_OPEN_ID", tokens.open_id);
+    if (tokens.refresh_expires_in) add("TIKTOK_REFRESH_EXPIRES_IN", tokens.refresh_expires_in);
     add("TIKTOK_AUTHED_AT", String(Date.now()));
     fs.writeFileSync(envPath, env);
   } catch (e) {

@@ -56,9 +56,16 @@ async function setTikTokOpenId(openId) {
 async function setTikTokAuthedAt(ts) {
   try { await require("../jobs/db.js").kvSet("tiktok_authed_at", String(ts)); } catch (e) { /* non-fatal */ }
 }
+async function getTikTokRefreshExpiresIn() {
+  if (process.env.TIKTOK_REFRESH_EXPIRES_IN) return process.env.TIKTOK_REFRESH_EXPIRES_IN;
+  try { return await require("../jobs/db.js").kvGet("tiktok_refresh_expires_in"); } catch (e) { return null; }
+}
+async function setTikTokRefreshExpiresIn(sec) {
+  try { await require("../jobs/db.js").kvSet("tiktok_refresh_expires_in", String(sec)); } catch (e) { /* non-fatal */ }
+}
 
 module.exports = {
   getToken, getAuthedAt, setToken, setAuthedAt,
-  getTikTokToken, getTikTokRefreshToken, getTikTokOpenId, getTikTokAuthedAt,
-  setTikTokToken, setTikTokRefreshToken, setTikTokOpenId, setTikTokAuthedAt,
+  getTikTokToken, getTikTokRefreshToken, getTikTokOpenId, getTikTokAuthedAt, getTikTokRefreshExpiresIn,
+  setTikTokToken, setTikTokRefreshToken, setTikTokOpenId, setTikTokAuthedAt, setTikTokRefreshExpiresIn,
 };
