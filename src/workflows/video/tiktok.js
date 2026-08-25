@@ -7,10 +7,11 @@
 //
 // TikTok OAuth (Content Posting API):
 //   authorize : https://www.tiktok.com/v2/auth/authorize/?client_key=...&scope=user.info.basic,video.publish&response_type=code&redirect_uri=...
-//   token     : POST https://open.tiktok.com/v2/oauth/token/   (authorization_code | refresh_token)
-//   publish   : POST https://open.tiktok.com/v2/post/publish/video/init/  -> { upload_url, publish_id }
+//   token     : POST https://open-api.tiktok.com/v2/oauth/token/   (authorization_code | refresh_token)
+//   publish   : POST https://open-api.tiktok.com/v2/post/publish/video/init/  -> { upload_url, publish_id }
 //               PUT  {upload_url}  (video bytes)
-//               POST https://open.tiktok.com/v2/post/publish/status/fetch/ -> { status }
+//               POST https://open-api.tiktok.com/v2/post/publish/status/fetch/ -> { status }
+// (open.tiktok.com was deprecated — returns 404 "TLB"; all API calls use open-api.tiktok.com)
 require("dotenv").config({ path: require("path").join(__dirname, "..", "..", "..", ".env") });
 const fs = require("fs");
 const path = require("path");
@@ -21,7 +22,10 @@ const readline = require("readline");
 const CLIENT_KEY = process.env.TIKTOK_CLIENT_KEY || process.env.Client_key;
 const CLIENT_SECRET = process.env.TIKTOK_CLIENT_SECRET || process.env.Client_secret;
 const REDIRECT = process.env.TIKTOK_CALLBACK_URL || "http://localhost:7860/tiktok_callback";
-const TOKEN_URL = "https://open.tiktok.com/v2/oauth/token/";
+// NOTE: TikTok deprecated the open.tiktok.com API host (returns 404 "TLB").
+// All API calls (token exchange, publish init, status fetch) must use
+// open-api.tiktok.com. The user-facing authorize page stays on www.tiktok.com.
+const TOKEN_URL = "https://open-api.tiktok.com/v2/oauth/token/";
 const SCOPES = "user.info.basic,video.publish";
 
 function consentUrl() {
@@ -42,9 +46,14 @@ async function exchangeTokens(form) {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams(form),
   });
-  const data = await res.json();
-  if (!res.ok || data.error) {
-    throw new Error(`TikTok token error: ${JSON.stringify(data.error || data)}`);
+  const text = await res.text();
+  let data = null;
+  try { data = JSON.parse(text); } catch { /* non-JSON response */ }
+  if (!res.ok || (data && data.error)) {
+    const detail = data
+      ? JSON.stringify(data.error || data).slice(0, 400)
+      : `HTTP ${res.status} (non-JSON): ${text.slice(0, 400)}`;
+    throw new Error(`TikTok token error: ${detail}`);
   }
   return data; // { access_token, expires_in, open_id, refresh_token, refresh_expires_in, scope, token_type }
 }
@@ -123,7 +132,7 @@ async function uploadVideo(filePath, { title, description, privacyLevel = "PUBLI
 
   // 1. initialize the publish
   const initRes = await fetch(
-    `https://open.tiktok.com/v2/post/publish/video/init/?access_token=${encodeURIComponent(token)}`,
+    `https://open-api.tiktok.com/v2/post/publish/video/init/?access_token=${encodeURIComponent(token)}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -166,7 +175,7 @@ async function uploadVideo(filePath, { title, description, privacyLevel = "PUBLI
 async function checkStatus(token, publishId) {
   try {
     const res = await fetch(
-      `https://open.tiktok.com/v2/post/publish/status/fetch/?access_token=${encodeURIComponent(token)}`,
+      `https://open-api.tiktok.com/v2/post/publish/status/fetch/?access_token=${encodeURIComponent(token)}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
