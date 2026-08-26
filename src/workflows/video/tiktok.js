@@ -133,10 +133,10 @@ async function uploadVideo(filePath, { title, description, privacyLevel = "PUBLI
 
   // 1. initialize the publish
   const initRes = await fetch(
-    `https://open.tiktokapis.com/v2/post/publish/video/init/?access_token=${encodeURIComponent(token)}`,
+    `https://open.tiktokapis.com/v2/post/publish/video/init/`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({
         post_info: {
           title: caption,
@@ -176,10 +176,10 @@ async function uploadVideo(filePath, { title, description, privacyLevel = "PUBLI
 async function checkStatus(token, publishId) {
   try {
     const res = await fetch(
-      `https://open.tiktokapis.com/v2/post/publish/status/fetch/?access_token=${encodeURIComponent(token)}`,
+      `https://open.tiktokapis.com/v2/post/publish/status/fetch/`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ publish_id: publishId }),
       }
     );
