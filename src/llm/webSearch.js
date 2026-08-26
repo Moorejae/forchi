@@ -97,7 +97,118 @@ async function searchDuckDuckGo(query) {
 }
 
 // ── Provider list (fallback order; Tavily last among keyed APIs since its key was 401) ──
+// ── Grokipedia (free, NO key) — xAI / Elon Musk's AI encyclopedia ─────────────
+// Search: /search?q= (server-rendered HTML -> /page/{slug} links)
+// Article: /page/{slug} (full article; body lives inside <article>)
+async function searchGrokipedia(query) {
+  const q = encodeURIComponent(query);
+  let html = "";
+  let ok = false;
+  // Grokipedia intermittently serves the results-less shell — retry a few times
+  for (let attempt = 1; attempt <= 3 && !ok; attempt++) {
+    const res = await fetch(`https://grokipedia.com/search?q=${q}`, { signal: AbortSignal.timeout(20000) });
+    if (!res.ok) throw new Error(`search HTTP ${res.status}`);
+    html = await res.text();
+    if (html.includes("/page/")) ok = true;
+    else await new Promise((r) => setTimeout(r, 1500 * attempt));
+  }
+  const slugs = [...new Set([
+    ...[...html.matchAll(/href="\/page\/([^"#?]+)"/g)].map((m) => decodeURIComponent(m[1])),
+    ...[...html.matchAll(/data-page-slug="([^"]+)"/g)].map((m) => decodeURIComponent(m[1])),
+  ])];
+  const bad = /^(search|login|sign|contribute|suggest|api|stats|terms|privacy|about|random|sitemap|random_article)$/i;
+  const good = slugs.filter((s) => s && !bad.test(s)).slice(0, 3);
+  if (!good.length) throw new Error("no article links");
+  const lines = [];
+  for (const slug of good) {
+    try {
+      const a = await fetch(`https://grokipedia.com/page/${encodeURIComponent(slug)}`, { signal: AbortSignal.timeout(20000) });
+      if (!a.ok) continue;
+      const ah = await a.text();
+      const title = ((ah.match(/<title>([^<]*)<\/title>/) || [])[1] || slug).replace(/\s*[—|]\s*Grokipedia\s*$/i, "").trim();
+      const body = extractGrokiBody(ah).slice(0, 600);
+      if (body) lines.push(`${title}: ${body} (https://grokipedia.com/page/${encodeURIComponent(slug)})`);
+    } catch {}
+  }
+  if (!lines.length) throw new Error("no article bodies");
+  return lines.join("\n");
+}
+
+function extractGrokiBody(html) {
+  let body = html;
+  const a = html.indexOf("<article");
+  const aEnd = html.indexOf("</article>");
+  if (a >= 0 && aEnd > a) body = html.slice(a, aEnd);
+  else {
+    const m = html.indexOf("<main");
+    const mEnd = html.indexOf("</main>");
+    if (m >= 0 && mEnd > m) body = html.slice(m, mEnd);
+  }
+  return body
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/g, "&").replace(/&#x27;|&#39;/g, "'").replace(/&quot;/g, '"')
+    .replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/\s+/g, " ").trim();
+}
+
+// ── Wikipedia (free, NO key) — high-quality factual grounding (history/Bible) ──
+async function searchWikipedia(query) {
+  const q = encodeURIComponent(query);
+  const res = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${q}&format=json&srlimit=4&utf8=1`, {
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const d = await res.json();
+  const hits = (d.query?.search || []).map((s) => s.title).filter(Boolean);
+  if (!hits.length) return "";
+  const lines = [];
+  for (const title of hits.slice(0, 3)) {
+    try {
+      const s = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`, {
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!s.ok) continue;
+      const j = await s.json();
+      const extract = (j.extract || "").replace(/\s+/g, " ").slice(0, 400);
+      if (extract) lines.push(`${j.title || title}: ${extract} (en.wikipedia.org/wiki/${encodeURIComponent(title)})`);
+    } catch {}
+  }
+  if (!lines.length) throw new Error("no wiki summaries");
+  return lines.join("\n");
+}
+
+// ── SearXNG public instances (free open-source meta-search, NO key) ──
+const SEARX_INSTANCES = [
+  "https://searx.be",
+  "https://search.bus-hit.me",
+  "https://searx.tiekoetter.com",
+  "https://priv.au",
+];
+async function searchSearx(query) {
+  let last;
+  for (const base of SEARX_INSTANCES) {
+    try {
+      const res = await fetch(`${base}/search?q=${encodeURIComponent(query)}&format=json&language=en`, {
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!res.ok) { last = new Error(`HTTP ${res.status} from ${base}`); continue; }
+      const d = await res.json();
+      const list = (d.results || []).slice(0, 5)
+        .filter((r) => r.title && r.url)
+        .map((r) => `${r.title} — ${(r.content || "").replace(/\s+/g, " ").slice(0, 250)} (${r.url})`);
+      if (list.length) return list.join("\n");
+      last = new Error(`empty from ${base}`);
+    } catch (e) { last = e; }
+  }
+  throw last || new Error("all searx instances failed");
+}
+
 const PROVIDERS = [
+  { name: "Grokipedia", run: searchGrokipedia, key: () => "free" },         // xAI encyclopedia, no key
+  { name: "Wikipedia", run: searchWikipedia, key: () => "free" },           // no key needed
+  { name: "SearXNG", run: searchSearx, key: () => "free" },                 // no key needed
   { name: "Serper", run: searchSerper, key: () => process.env.SERPER_API_KEY },
   { name: "Exa", run: searchExa, key: () => process.env.EXA_API_KEY },
   { name: "Firecrawl", run: searchFirecrawl, key: () => process.env.FIRECRAWL_API_KEY },
@@ -147,4 +258,4 @@ function looksLikeSearchQuery(text) {
   return (fresh && fact) || (q && fact) || fresh;
 }
 
-module.exports = { searchWeb, looksLikeSearchQuery, searchTavily, searchSerper, searchExa, searchFirecrawl };
+module.exports = { searchWeb, looksLikeSearchQuery, searchTavily, searchSerper, searchExa, searchFirecrawl, searchWikipedia, searchSearx, searchGrokipedia };
