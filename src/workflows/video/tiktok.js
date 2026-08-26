@@ -127,8 +127,6 @@ async function handleOauthCallback(code) {
 async function uploadVideo(filePath, { title, description, privacyLevel = "PUBLIC_TO_EVERYONE" } = {}) {
   const token = await refreshAccess();
   const size = fs.statSync(filePath).size;
-  const chunkSize = 5 * 1024 * 1024; // 5MB chunk; our videos are ~30MB -> 6 chunks
-  const totalChunkCount = Math.max(1, Math.ceil(size / chunkSize));
   const caption = `${title || "Victor Moore"}${description ? "\n\n" + description : ""}`.slice(0, 2200);
 
   // 1. initialize the publish
@@ -146,7 +144,9 @@ async function uploadVideo(filePath, { title, description, privacyLevel = "PUBLI
           disable_stitch: false,
           video_cover_timestamp_ms: 1000,
         },
-        source_info: { source: "FILE_UPLOAD", video_size: size, chunk_size: chunkSize, total_chunk_count: totalChunkCount },
+        // TikTok validates chunk_size * total_chunk_count == video_size exactly.
+        // We upload the whole file in ONE PUT, so declare a single full-size chunk.
+        source_info: { source: "FILE_UPLOAD", video_size: size, chunk_size: size, total_chunk_count: 1 },
       }),
     }
   );
@@ -161,7 +161,11 @@ async function uploadVideo(filePath, { title, description, privacyLevel = "PUBLI
   //    is only required when the server returns a chunked_upload flag)
   const upRes = await fetch(upload_url, {
     method: "PUT",
-    headers: { "Content-Type": "video/mp4", "Content-Length": String(size) },
+    headers: {
+      "Content-Type": "video/mp4",
+      "Content-Length": String(size),
+      "Content-Range": `bytes 0-${size - 1}/${size}`,
+    },
     body: fs.createReadStream(filePath),
     duplex: "half",
   });
