@@ -3,8 +3,8 @@ const socialWorkflow = require("../workflows/social/index");
 const { generateFacebookPost, generateLinkedInPost } = require("../llm/contentGen");
 const autoMode = require("./autoMode");
 
-// Auto mode: 5 posts/day, 4 hours apart (08:00, 12:00, 16:00, 20:00, 00:00 UTC)
-const AUTO_SCHEDULE = "0 0,8,12,16,20 * * *";
+// Auto mode: 2 posts/day (08:00, 16:00 UTC) — reduced from 5/day per user directive.
+const AUTO_SCHEDULE = "0 8,16 * * *";
 
 // Rotating themes so posts stay fresh day to day.
 const FB_THEMES = [
@@ -73,6 +73,25 @@ function pick(arr, seed) {
   return arr[seed % arr.length];
 }
 
+// Persisted topic rotation: picks a random topic NOT used in the recent half of the
+// pool for that platform (resets when exhausted). Kills the deterministic
+// "same topic every post" repetition — fresh, never static, never repeats daily.
+const fs = require("fs");
+const path = require("path");
+const TOPIC_STATE = path.join(__dirname, "..", "..", "temp_media", "social_topics.json");
+function loadTopics() { try { return JSON.parse(fs.readFileSync(TOPIC_STATE, "utf8")); } catch { return {}; } }
+function saveTopics(s) { try { fs.writeFileSync(TOPIC_STATE, JSON.stringify(s, null, 2)); } catch {} }
+function pickFresh(arr, key) {
+  const st = loadTopics();
+  const used = st[key] || [];
+  const availIdx = arr.map((_, i) => i).filter((i) => !used.includes(i));
+  const pool = availIdx.length ? availIdx : arr.map((_, i) => i);
+  const idx = pool[Math.floor(Math.random() * pool.length)];
+  st[key] = [...used.filter((u) => u !== idx), idx].slice(-Math.max(1, Math.ceil(arr.length / 2)));
+  saveTopics(st);
+  return arr[idx];
+}
+
 let running = false;
 let registered = false;
 let cronTask = null;
@@ -113,10 +132,9 @@ function initScheduler() {
       try {
         // Rotate themes by current day + hour so each run differs and changes daily
         // across the (now much larger) pools — never the same sequence two days in a row.
-        const hour = new Date().getUTCHours();
-        const daySeed = Math.floor(Date.now() / 86400000);
-        const fbTheme = pick(FB_THEMES, daySeed * 13 + Math.floor(hour / 4));
-        const liTopic = pick(LI_TOPICS, daySeed * 29 + Math.floor(hour / 4) + 1);
+        // Fresh topic per platform (persisted, no day-to-day repeats).
+        const fbTheme = pickFresh(FB_THEMES, "fb");
+        const liTopic = pickFresh(LI_TOPICS, "li");
 
         console.log(`[Auto] ${new Date().toISOString()} — generating posts (FB: "${fbTheme}" | LI: "${liTopic}")`);
 

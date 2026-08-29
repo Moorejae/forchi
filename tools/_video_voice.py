@@ -1,14 +1,29 @@
-"""ForChi Higgs TTS client - renders a script into per-phrase WAVs (clean / whisper voices).
+"""ForChi voice client - renders a script into per-phrase WAVs.
 
-Uses the slymun/higgs-tts3 Space (zero-shot clone of the Victor Moore voice).
-Voice modes:
+PRIMARY (2026-08-29): Contabo CPU F5-TTS worker (voice_synthesizer.py) — off
+Hugging Face entirely until ~Nov 25.
+FALLBACK: slymun/higgs-tts3 Space (zero-shot clone of the Victor Moore voice).
+
+Voice modes (best-effort — Contabo renders the clean persona):
   - clean : "Victor Moore (clean)" - the deep baritone persona
-  - whisper: "Victor Moore (clean)" + <|style:whispering|> token = TRUE stage whisper (verified MATCHED)
-  - whisper_ref: "Whisper (user ref)" - clone of the user's whisper reference
+  - whisper: "Victor Moore (clean)" + <|style:whispering|> token (Higgs only)
+  - whisper_ref: "Whisper (user ref)" (Higgs only)
 
 Per phrase it synthesizes and returns the wav. Phrases are chunked by sentence.
 """
-import os, time, shutil, re
+import os, time, shutil, re, json, sys, tempfile
+
+# Contabo CPU worker connection (mirrors tools/_v10_contabo_voice.py)
+_CONTABO_HOST = "217.77.1.187"
+_CONTABO_USER = "root"
+_CONTABO_JOBS = "/opt/voice/jobs"
+_CONTABO_OUT = "/opt/voice/out"
+
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 from gradio_client import Client
 from _paths import BASE
 
@@ -16,6 +31,109 @@ HIGGS_SPACE = "slymun/higgs-tts3"
 DEFAULT_VOICE = "Victor Moore (clean)"
 WHISPER_VOICE = "Victor Moore (clean)"
 WHISPER_REF_VOICE = "Whisper (user ref)"
+
+
+def _contabo_env(k):
+    try:
+        with open(os.path.join(BASE, ".env"), "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith(k + "="):
+                    return line.split("=", 1)[1].strip().strip('"')
+    except Exception:
+        pass
+    return os.environ.get(k, "").strip()
+
+
+def contabo_available():
+    """True if the Contabo voice worker looks reachable (password present + we
+    can open a quick SSH + confirm the worker service)."""
+    if not _contabo_env("CONTABO_LOGIN_PASSWORD"):
+        return False
+    try:
+        import paramiko
+        c = paramiko.SSHClient()
+        c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        c.connect(_CONTABO_HOST, port=22, username=_CONTABO_USER,
+                  password=_contabo_env("CONTABO_LOGIN_PASSWORD"), timeout=15)
+        i, o, e = c.exec_command("systemctl is-active voice-worker", timeout=20)
+        st = (o.read().decode().strip() or "")
+        c.close()
+        return st == "active"
+    except Exception:
+        return False
+
+
+def render_contabo(text, out_dir, mode='clean', seed=-1, max_len=220, timeout=3600):
+    """Render the full script via the Contabo F5-TTS worker -> out_dir/pN.wav.
+    Returns the same list-of-dicts shape as render_script()."""
+    import paramiko
+    os.makedirs(out_dir, exist_ok=True)
+    phrases = split_phrases(text, max_len=max_len)
+    n = len(phrases)
+    print(f'  [voice] Contabo: {n} phrases', flush=True)
+
+    # manifest the worker understands: one scene per phrase (single shot)
+    man = {"scenes": [{"label": f"phrase {i}", "shots": [{"text": ph}]} for i, ph in enumerate(phrases, 1)]}
+
+    pw = _contabo_env("CONTABO_LOGIN_PASSWORD")
+    c = paramiko.SSHClient()
+    c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    c.connect(_CONTABO_HOST, port=22, username=_CONTABO_USER, password=pw, timeout=30)
+
+    def rcmd(cmd, t=60):
+        i, o, e = c.exec_command(cmd, timeout=t)
+        out = o.read().decode(errors="replace")
+        rc = o.channel.recv_exit_status()
+        return rc, out
+
+    try:
+        rcmd(f"mkdir -p {_CONTABO_JOBS} {_CONTABO_OUT}")
+        sftp = c.open_sftp()
+        job = f"{_CONTABO_JOBS}/job_{int(time.time())}.json"
+        tmp = job + ".tmp"
+        with sftp.open(tmp, "w") as f:
+            f.write(json.dumps(man))
+        sftp.rename(tmp, job)
+        sftp.close()
+        print(f'  [voice] Contabo submitted {job}', flush=True)
+
+        base = job.rsplit(".", 1)[0]
+        done, failed = base + ".done", base + ".failed"
+        t0 = time.time()
+        while time.time() - t0 < timeout:
+            rc, out = rcmd(f"ls {done} {failed} 2>/dev/null")
+            if done.split("/")[-1] in out:
+                print('  [voice] Contabo worker completed ✓', flush=True)
+                break
+            if failed.split("/")[-1] in out:
+                rc2, errout = rcmd(f"cat {failed}")
+                raise RuntimeError(f"Contabo voice failed: {errout[:200]}")
+            print(f'  [voice] ... waiting {round(time.time()-t0)}s', flush=True)
+            time.sleep(20)
+        else:
+            raise RuntimeError(f"Contabo voice timeout after {timeout}s")
+
+        sftp = c.open_sftp()
+        results = []
+        for i in range(1, n + 1):
+            remote = f"{_CONTABO_OUT}/r{i:02d}.wav"
+            local = os.path.join(out_dir, f"p{i}.wav")
+            try:
+                st = sftp.stat(remote)
+                if st.st_size > 0:
+                    sftp.get(remote, local)
+                    tighten_silences(local)
+                    results.append({"index": i, "text": phrases[i-1], "wav": local, "mode": mode})
+            except FileNotFoundError:
+                pass
+        sftp.close()
+        print(f'  [voice] Contabo downloaded {len(results)}/{n}', flush=True)
+        if len(results) < n:
+            raise RuntimeError(f"only {len(results)}/{n} phrases rendered")
+        return results
+    finally:
+        c.close()
 
 
 def _token():
@@ -172,10 +290,20 @@ def tighten_silences(wav_path, max_sil=0.25, lead=0.05, tail=0.10, threshold=0.0
 
 def render_script(text, out_dir, mode='clean', client=None, resume=True,
                   temperature=0.7, seed=-1, max_tokens=4096, max_len=220):
-    """Render a full script -> per-phrase wavs in out_dir/pN.wav (+ manifest of timings).
-    Each phrase wav is silence-tightened (caps Higgs mid-sentence pauses).
-    Returns list of dicts: {index, text, wav, mode, duration}.
+    """Render a full script -> per-phrase wavs in out_dir/pN.wav.
+
+    PRIMARY: Contabo CPU F5-TTS worker (off HF). If the worker is unreachable,
+    falls back to the Higgs Space. Returns list of dicts {index, text, wav, mode}.
     """
+    # Off-HF: try Contabo first unless forced to higgs via VOICE_BACKEND=higgs.
+    backend = os.environ.get("VOICE_BACKEND", "").strip().lower()
+    if backend != "higgs" and contabo_available():
+        try:
+            return render_contabo(text, out_dir, mode=mode, seed=seed, max_len=max_len)
+        except Exception as e:
+            print(f'  [voice] Contabo render failed ({str(e)[:100]}) — falling back to Higgs', flush=True)
+
+    # --- legacy Higgs path ---
     os.makedirs(out_dir, exist_ok=True)
     phrases = split_phrases(text, max_len=max_len)
     print(f'  [higgs] {len(phrases)} phrases', flush=True)

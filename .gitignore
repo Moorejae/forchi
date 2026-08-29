@@ -4,6 +4,9 @@ dist/
 .env.local
 .env.*.local
 *.log
+# GCP service-account keys — SECRETS, never commit
+/gen-lang-client-*.json
+/flash-realm-*.json
 img_space_log.txt
 img_space_build_log.txt
 temp_media/

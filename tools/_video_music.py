@@ -158,12 +158,14 @@ def pick_instrumental():
     return random.choice(files)
 
 
-def build_bed(src, dur_s, out_path, peak_db=-6.0, fade_out_st=None):
+def build_bed(src, dur_s, out_path, peak_db=-6.0, fade_out_st=None, random_offset=True):
     """Convert + LOOP any audio (ogg/mp3/wav instrumental or piano lib) to a 24k mono
     bed at a consistent peak level, faded in/out, that plays for the FULL dur_s.
     -stream_loop -1 guarantees the music runs to the END of the video even when
-    the source track is shorter than the narration (previously it ended early)."""
-    import subprocess, shutil, imageio_ffmpeg
+    the source track is shorter than the narration (previously it ended early).
+    random_offset seeks into LONG tracks so different parts of each song get used
+    across videos (previously only the intro was ever heard)."""
+    import subprocess, shutil, imageio_ffmpeg, random, re
     if not src or not os.path.exists(src):
         print(f'  [music] bed source missing: {src}', flush=True)
         return None
@@ -183,7 +185,18 @@ def build_bed(src, dur_s, out_path, peak_db=-6.0, fade_out_st=None):
     st = fade_out_st if fade_out_st is not None else max(dur_s - 2, 0)
     d = min(2.0, max(dur_s - st, 0)) if st < dur_s else 0.0
     af = f'volume={gain:.4f},afade=t=in:d=1.5,afade=t=out:st={st:.2f}:d={d:.2f}'
-    subprocess.run([FF, '-y', '-stream_loop', '-1', '-i', src, '-t', f'{dur_s:.2f}',
+    seek = []
+    if random_offset:
+        try:
+            r = subprocess.run([FF, '-i', src], capture_output=True, text=True, errors='ignore')
+            m = re.search(r'Duration:\s*(\d+):(\d+):([\d.]+)', r.stderr)
+            if m:
+                src_dur = float(m.group(1)) * 3600 + float(m.group(2)) * 60 + float(m.group(3))
+                if src_dur > dur_s + 2:
+                    seek = ['-ss', f'{random.uniform(0, src_dur - dur_s):.2f}']
+        except Exception:
+            pass
+    subprocess.run([FF, '-y', *seek, '-stream_loop', '-1', '-i', src, '-t', f'{dur_s:.2f}',
                     '-af', af, '-ar', '24000', '-ac', '1', out_path], capture_output=True)
     return out_path if os.path.exists(out_path) else None
 

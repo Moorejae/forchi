@@ -36,18 +36,34 @@ def phrase_mood(phrase):
     return 'melancholic', 'cool'
 
 
+USAGE_FILE = os.path.join(BASE, 'temp_media', 'clip_usage.json')
+def _load_usage():
+    try:
+        return json.load(open(USAGE_FILE, encoding='utf-8'))
+    except Exception:
+        return {}
+def _save_usage(u):
+    try:
+        json.dump(u, open(USAGE_FILE, 'w', encoding='utf-8'))
+    except Exception:
+        pass
+
 def pick_clips(phrases, seed=None):
     """Return list of {file, path, mood, color_temp} for each phrase."""
     pool = load_pool(seed=seed)
     if not pool:
         raise SystemExit('no usable clips in manifest')
+    # GLOBAL freshness across videos: avoid clips used in the most recent shorts
+    # (persisted) so the same clips don't repeat over and over day to day.
+    usage = _load_usage()
+    recent = set(usage.get('recent', []))
     # split pool by color_temp
     warm = [e for e in pool if e.get('color_temp') == 'warm']
     cool = [e for e in pool if e.get('color_temp') == 'cool']
     neutral = [e for e in pool if e.get('color_temp') not in ('warm', 'cool')]
 
-    # freshness trackers
-    used_ids = set()
+    # freshness trackers (recent clips are treated as used until the pool forces reuse)
+    used_ids = set(recent)
     last_temp = None
 
     def take(src_list, prefer_mood=None):
@@ -82,6 +98,11 @@ def pick_clips(phrases, seed=None):
             'mood': e.get('mood'),
             'color_temp': e.get('color_temp'),
         })
+    # persist this short's clip usage for global freshness (keep the last ~20 clips)
+    for p in picks:
+        recent = [f for f in usage.get('recent', []) if f != p['file']] + [p['file']]
+        usage['recent'] = recent[-20:]
+    _save_usage(usage)
     return picks
 
 

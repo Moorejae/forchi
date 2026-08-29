@@ -115,9 +115,13 @@ const TRIED = {
 // secondary — a failure here must NOT fail the whole post, it's recorded instead.
 async function postToSecondaryPlatforms(mp4, { title, description }) {
   const tasks = [];
-  // TikTok (skipped entirely if no token yet — needs one-time 'tiktok auth' consent)
+  // TikTok — DISCONNECTED by user directive (2026-08-27). Skipped while
+  // TIKTOK_DISABLED=true in .env; remove that var to re-enable.
   tasks.push(
     (async () => {
+      if (process.env.TIKTOK_DISABLED === "true") {
+        return { platform: "tiktok", skipped: true, reason: "TikTok disconnected (TIKTOK_DISABLED=true)" };
+      }
       const tiktok = require("./tiktok.js");
       const ts = require("./tokenStore.js");
       const hasToken = await ts.getTikTokToken().catch(() => null);
@@ -256,7 +260,9 @@ async function runOnce({ notify } = {}) {
     const { ensureTopicPlaylist, addVideoToPlaylist } = require("./playlists.js");
     const { buildTitle, buildDescription } = require("./metadata.js");
     const token = await youtube.refreshAccess();
-    const baseTitle = "Victor Moore";
+    // Put the actual TOPIC in the title so every Short is clearly labeled on
+    // YouTube (previously all were just "Victor Moore #tags" -> looked unlabeled).
+    const baseTitle = topic ? `${topic} | Victor Moore` : "Victor Moore";
     const title = buildTitle(baseTitle, null, null);
     const description = buildDescription({
       script: run.script, baseTitle, mood: run.mood || "reflection",

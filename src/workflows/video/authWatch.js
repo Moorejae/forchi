@@ -19,7 +19,7 @@ const path = require("path");
 const BASE = process.env.FORCHI_BASE || path.resolve(__dirname, "..", "..", "..");
 const STATE_FILE = path.join(BASE, "temp_media", "youtube_auth_state.json");
 const EXPIRY_DAYS = 7;            // Google: unverified apps get 7-day refresh tokens
-const WARN_DAYS = 6;              // warn 1 day before expiry
+const WARN_DAYS = 5;              // warn 2 days (48h) before expiry — per user directive
 const THROTTLE_MS = 24 * 3600 * 1000; // one DM per day per issue
 
 function loadState() {
@@ -79,6 +79,38 @@ function buildConsentMessage(why) {
   );
 }
 
+// Send the consent/auth message via Resend email (in addition to the Telegram DM).
+async function sendAuthEmail(message) {
+  const key = process.env.RESEND_API_KEY;
+  const to = process.env.EMAIL_TO;
+  if (!key || !to) { console.warn("[YouTubeAuth] no RESEND_API_KEY/EMAIL_TO — skipping email"); return; }
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: process.env.EMAIL_FROM || "ForChi <onboarding@resend.dev>",
+        to: [to],
+        subject: "🎬 ForChi YouTube — re-authorize now (expires soon)",
+        text: message.replace(/[*_`]/g, ""), // strip Telegram markdown for email
+      }),
+    });
+    if (!res.ok) console.warn("[YouTubeAuth] email send failed:", res.status, (await res.text()).slice(0, 200));
+    else console.log("[YouTubeAuth] auth email sent to", to);
+  } catch (e) {
+    console.warn("[YouTubeAuth] email error:", e.message);
+  }
+}
+
+// Notify via BOTH Telegram (if a notifier is wired) AND Resend email.
+// emailMessage = full text (with the consent link); tgMessage = short pointer to the
+// email (defaults to the full text when omitted).
+async function notifyBoth(notify, emailMessage, tgMessage) {
+  const tg = tgMessage || emailMessage;
+  if (notify) { try { notify(tg); } catch (e) { console.warn("[YouTubeAuth] tg notify failed:", e.message); } }
+  await sendAuthEmail(emailMessage);
+}
+
 async function checkYoutubeAuth({ notify } = {}) {
   const s = loadState();
   const now = Date.now();
@@ -87,7 +119,7 @@ async function checkYoutubeAuth({ notify } = {}) {
   const warn = (msg) => {
     s.lastWarned = now;
     saveState(s);
-    if (notify) notify(msg);
+    if (notify) notifyBoth(notify, msg).catch((e) => console.warn("[YouTubeAuth] notifyBoth failed:", e.message));
     else console.warn("[YouTubeAuth] " + msg);
   };
 
@@ -142,7 +174,10 @@ async function checkPreemptive({ notify } = {}) {
   if (s.lastWarned && now - s.lastWarned < THROTTLE_MS) return { ok: true, reason: "throttled" };
   s.lastWarned = now;
   saveState(s);
-  if (notify) notify(buildConsentMessage("My YouTube access expires in about a day. Re-approve now so posting never breaks."));
+  const emailMsg = buildConsentMessage("My YouTube access expires in about 48 hours. Click the link in this email to re-approve now so posting never breaks.");
+  const tgMsg = "🎬 *YouTube re-auth needed in ~48h*\n\nI've emailed you the one-click authorization link — click it in your inbox (or reply `youtube auth`) to keep posting.";
+  if (notify) notifyBoth(notify, emailMsg, tgMsg)
+    .catch((e) => console.warn("[YouTubeAuth] notifyBoth failed:", e.message));
   else console.warn("[YouTubeAuth] pre-emptive re-auth needed");
   return { ok: false, reason: "expiring" };
 }
