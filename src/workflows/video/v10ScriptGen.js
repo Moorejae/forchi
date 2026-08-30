@@ -15,6 +15,15 @@ const BASE = process.env.FORCHI_BASE || path.resolve(__dirname, "..", "..", ".."
 const STATE = path.join(BASE, "temp_media", "v10_script_state.json");
 const MODEL = process.env.V10_SCRIPT_MODEL || "gemini-3.5-flash";
 const KEY = (process.env.GEMINI_PAID_API_KEY || "").trim();
+// Gemini keys waterfall: the same proven multi-key list the bot uses everywhere
+// (chat/voice/shorts all work on the VPS with GEMINI_KEYS). Fall back to the
+// single paid key only if the list is empty.
+function geminiKeys() {
+  const raw = process.env.GEMINI_KEYS || "";
+  const list = raw.split(",").map((k) => k.trim()).filter(Boolean);
+  if (list.length) return list;
+  return KEY ? [KEY] : [];
+}
 const SCRIPTS_DIR = path.join(BASE, "temp_media", "v10_run");
 const TMIN = parseInt(process.env.V10_TARGET_MINUTES || "5", 10);
 const countWords = (scs) => (scs || []).reduce((a, s) => a + ((s.narration || "").split(/\s+/).filter(Boolean).length), 0);
@@ -94,24 +103,33 @@ async function research(theme) {
 }
 
 async function callGemini(prompt) {
-  const chain = [MODEL, "gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.7-flash"];
-  let lastErr = null;
-  for (const m of [...new Set(chain)]) {
-    for (let a = 0; a < 3; a++) {
-      try {
-        const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${KEY}`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.7, maxOutputTokens: 9000, responseMimeType: "application/json" } }),
-        });
-        const t = await r.text();
-        if (!r.ok) { lastErr = `HTTP ${r.status}`; await new Promise((s) => setTimeout(s, 8000 * (a + 1))); continue; }
-        const j = JSON.parse(t);
-        const txt = j.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
-        const m2 = txt.match(/\{[\s\S]*\}/);
-        if (!m2) { lastErr = "no JSON"; continue; }
-        return JSON.parse(m2[0]);
-      } catch (e) { lastErr = e.message; await new Promise((s) => setTimeout(s, 8000 * (a + 1))); }
+  // Model tiers: newest flash first, rotate on any error (mirrors provider.js).
+  const tiers = [...new Set([MODEL, "gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.7-flash", "gemini-2.5-flash", "gemini-2.0-flash"])];
+  const keys = geminiKeys();
+  if (!keys.length) throw new Error("no Gemini keys configured (GEMINI_KEYS / GEMINI_PAID_API_KEY)");
+  let lastErr = "no keys tried";
+  for (const key of keys) {
+    for (const m of tiers) {
+      for (let a = 0; a < 2; a++) {
+        try {
+          const ctrl = new AbortController();
+          const to = setTimeout(() => ctrl.abort(), 60000); // never hang the pipeline
+          const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${key}`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }],
+              generationConfig: { temperature: 0.7, maxOutputTokens: 9000, responseMimeType: "application/json" } }),
+            signal: ctrl.signal,
+          });
+          clearTimeout(to);
+          const t = await r.text();
+          if (!r.ok) { lastErr = `HTTP ${r.status}`; await new Promise((s) => setTimeout(s, 4000 * (a + 1))); continue; }
+          const j = JSON.parse(t);
+          const txt = j.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
+          const m2 = txt.match(/\{[\s\S]*\}/);
+          if (!m2) { lastErr = "no JSON"; continue; }
+          return JSON.parse(m2[0]);
+        } catch (e) { lastErr = e.message || String(e); await new Promise((s) => setTimeout(s, 3000)); }
+      }
     }
   }
   throw new Error("script gen failed: " + lastErr);
