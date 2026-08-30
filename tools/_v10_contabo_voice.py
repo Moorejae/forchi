@@ -62,6 +62,50 @@ def run_remote(c, cmd, timeout=120):
     return rc, out, err
 
 
+class ResilientSSH:
+    """Reconnect on dropped SSH connections (the VPS kills idle keepalives under
+    heavy CPU load from F5 rendering). Without this, a 30-60 min voice render
+    would drop mid-wait and force an unnecessary Higgs/ZeroGPU fallback."""
+
+    def __init__(self):
+        self.c = None
+        self._connect()
+
+    def _connect(self):
+        self.c = connect()
+        try:
+            self.c.get_transport().set_keepalive(15)
+        except Exception:
+            pass
+
+    def run(self, cmd, timeout=120):
+        for attempt in range(8):
+            try:
+                if self.c is None:
+                    self._connect()
+                return run_remote(self.c, cmd, timeout=timeout)
+            except (EOFError, OSError, paramiko.SSHException) as e:
+                print(f"[v10voice] conn lost ({type(e).__name__}: {str(e)[:60]}) — reconnecting...", flush=True)
+                try:
+                    self.c.close()
+                except Exception:
+                    pass
+                self.c = None
+                time.sleep(3 * (attempt + 1))
+        raise RuntimeError("could not reconnect after 8 attempts")
+
+    def sftp(self):
+        if self.c is None:
+            self._connect()
+        return self.c.open_sftp()
+
+    def close(self):
+        try:
+            self.c.close()
+        except Exception:
+            pass
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("manifest", help="local run manifest.json")
@@ -80,12 +124,12 @@ def main():
     digest = hashlib.sha1(json.dumps({"scenes": scenes}, sort_keys=True).encode("utf-8")).hexdigest()[:12]
     job = REMOTE_JOBS.rstrip("/") + f"/job_{digest}.json"
 
-    c = connect()
+    c = ResilientSSH()
     try:
-        run_remote(c, f"mkdir -p {REMOTE_JOBS} {REMOTE_VOICE}")
+        c.run(f"mkdir -p {REMOTE_JOBS} {REMOTE_VOICE}")
         # Atomic write: create as .tmp then rename into the jobs dir so the worker
         # never globs a half-written .json (paramiko SFTP close() can race the poll).
-        sftp = c.open_sftp()
+        sftp = c.sftp()
         tmp = job + ".tmp"
         with sftp.open(tmp, "w") as f:
             f.write(json.dumps({"scenes": scenes}))
@@ -98,12 +142,12 @@ def main():
         done = base + ".done"
         failed = base + ".failed"
         while time.time() - t0 < args.timeout:
-            rc, out, _ = run_remote(c, f"ls {done} {failed} 2>/dev/null")
+            rc, out, _ = c.run(f"ls {done} {failed} 2>/dev/null")
             if done.split("/")[-1] in out:
                 print("[v10voice] worker completed ✓", flush=True)
                 break
             if failed.split("/")[-1] in out:
-                rc2, errout, _ = run_remote(c, f"cat {failed} 2>/dev/null; ls -la {REMOTE_VOICE}")
+                rc2, errout, _ = c.run(f"cat {failed} 2>/dev/null; ls -la {REMOTE_VOICE}")
                 print(f"[v10voice] worker FAILED: {errout}", flush=True)
                 sys.exit(2)
             print(f"[v10voice] ... {round(time.time()-t0)}s elapsed (waiting)", flush=True)
@@ -117,22 +161,48 @@ def main():
         # earlier jobs are never mistaken for this job's output)
         job_stem = os.path.basename(job).rsplit(".", 1)[0]
         remote_dir = REMOTE_VOICE.rstrip("/") + "/" + job_stem
-        sftp = c.open_sftp()
         got = 0
+        missing = []
         for i in range(1, n_scenes + 1):
             remote = remote_dir + f"/r{i:02d}.wav"
             local = os.path.join(args.voice_dir, f"r{i:02d}.wav")
             try:
-                st = sftp.stat(remote)
-                if st.st_size > 0:
-                    sftp.get(remote, local)
-                    got += 1
-            except FileNotFoundError:
-                pass
-        sftp.close()
+                sftp = c.sftp()
+                try:
+                    st = sftp.stat(remote)
+                    if st.st_size > 0:
+                        sftp.get(remote, local)
+                        got += 1
+                    else:
+                        missing.append(f"r{i:02d} (0 bytes)")
+                finally:
+                    sftp.close()
+            except (FileNotFoundError, IOError):
+                missing.append(f"r{i:02d} (absent)")
+            except (EOFError, OSError, paramiko.SSHException):
+                # connection dropped mid-download -> reconnect and retry this file
+                try:
+                    c.close()
+                except Exception:
+                    pass
+                c._connect()
+                try:
+                    sftp = c.sftp()
+                    try:
+                        st = sftp.stat(remote)
+                        if st.st_size > 0:
+                            sftp.get(remote, local)
+                            got += 1
+                        else:
+                            missing.append(f"r{i:02d} (0 bytes)")
+                    finally:
+                        sftp.close()
+                except Exception as ex:
+                    missing.append(f"r{i:02d} (dl retry: {type(ex).__name__})")
         print(f"[v10voice] downloaded {got}/{n_scenes} wavs -> {args.voice_dir}", flush=True)
-        if got < n_scenes:
-            print("[v10voice] WARNING: missing some scenes (worker may skip empty ones)", flush=True)
+        if missing:
+            print("[v10voice] MISSING:", ", ".join(missing), file=sys.stderr)
+            sys.exit(4)
     finally:
         c.close()
 
