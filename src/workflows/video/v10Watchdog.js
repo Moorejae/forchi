@@ -13,6 +13,7 @@ require("dotenv").config({ path: path.join(BASE, ".env") });
 
 const v10 = require("./v10Pipeline.js");
 const sched = require("./v10Scheduler.js");
+const wlock = require("../../scheduler/workflowLock.js");
 
 // Notifications -> Telegram (best-effort; uses the bot token + jobs chat).
 async function notify(text) {
@@ -31,20 +32,40 @@ async function notify(text) {
 }
 
 // BUILD: run the full pipeline in build-only mode (no upload), returns { runId }.
+// Honours the GLOBAL single-workflow lock: if a jobs/social workflow is running,
+// skip this tick (the scheduler will retry). One workflow at a time on the VPS.
 async function buildFn(slot) {
-  console.log(`[v10watch] buildFn firing for slot "${slot.label}"`);
-  const theme = undefined; // v10ScriptGen rotates themes internally
-  const res = await v10.runOnce({ buildOnly: true, theme, notify });
-  const rid = res && res.runId;
-  if (!rid) throw new Error("pipeline returned no runId");
-  console.log(`[v10watch] built run ${rid}`);
-  return { runId: rid, runDir: res.runDir };
+  if (!wlock.tryAcquire("v10_build", { ttlMs: 4 * 60 * 60 * 1000 })) {
+    const o = wlock.owner();
+    console.warn(`[v10watch] build SKIPPED — ${o ? o.name + " (pid " + o.owner + ")" : "another workflow"} holds the lock`);
+    return null;
+  }
+  try {
+    console.log(`[v10watch] buildFn firing for slot "${slot.label}"`);
+    const theme = undefined; // v10ScriptGen rotates themes internally
+    const res = await v10.runOnce({ buildOnly: true, theme, notify });
+    const rid = res && res.runId;
+    if (!rid) throw new Error("pipeline returned no runId");
+    console.log(`[v10watch] built run ${rid}`);
+    return { runId: rid, runDir: res.runDir };
+  } finally {
+    wlock.release("v10_build");
+  }
 }
 
 // PUBLISH: upload a pre-built run to YouTube.
 async function publishFn(runId) {
-  console.log(`[v10watch] publishFn firing for run ${runId}`);
-  await v10.publishRun(runId, { notify });
+  if (!wlock.tryAcquire("v10_publish", { ttlMs: 90 * 60 * 1000 })) {
+    const o = wlock.owner();
+    console.warn(`[v10watch] publish SKIPPED — ${o ? o.name + " (pid " + o.owner + ")" : "another workflow"} holds the lock`);
+    return;
+  }
+  try {
+    console.log(`[v10watch] publishFn firing for run ${runId}`);
+    await v10.publishRun(runId, { notify });
+  } finally {
+    wlock.release("v10_publish");
+  }
 }
 
 const cmd = (process.argv[2] || "").toLowerCase();

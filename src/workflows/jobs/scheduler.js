@@ -5,6 +5,7 @@ const nodeCron = require("node-cron");
 const { runOnce, statusSummary, MAX_AGE_DAYS } = require("./index");
 const db = require("./db");
 const jobsMode = require("./jobsMode");
+const wlock = require("../../scheduler/workflowLock.js");
 const notifyTarget = require("./notifyTarget");
 
 let timer = null;
@@ -110,7 +111,14 @@ function startJobsScheduler({ bot } = {}) {
   setTimeout(() => sendDailyReport(bot), 45000);
 
   timer = setInterval(() => {
-    if (jobsMode.isEnabled()) runSafe();
+    if (!jobsMode.isEnabled()) return;
+    // Global single-workflow lock: skip the scan while a V10 build/publish runs.
+    if (!wlock.tryAcquire("jobs_scan", { ttlMs: 90 * 60 * 1000 })) {
+      const o = wlock.owner();
+      console.warn(`[JobsScheduler] scan SKIPPED — ${o ? o.name + " (pid " + o.owner + ")" : "another workflow"} holds the lock`);
+      return;
+    }
+    try { runSafe(); } finally { wlock.release("jobs_scan"); }
   }, intervalMin * 60000);
 
   // Daily (every-24h) report: 19:00 UTC = 20:00 WAT (8pm Nigerian time).

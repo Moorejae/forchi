@@ -2,6 +2,7 @@ const cron = require("node-cron");
 const socialWorkflow = require("../workflows/social/index");
 const { generateFacebookPost, generateLinkedInPost } = require("../llm/contentGen");
 const autoMode = require("./autoMode");
+const wlock = require("./workflowLock.js");
 
 // Auto mode: 2 posts/day (08:00, 16:00 UTC) — reduced from 5/day per user directive.
 const AUTO_SCHEDULE = "0 8,16 * * *";
@@ -128,6 +129,12 @@ console.log(`[Scheduler] Initializing AUTO mode (2 posts/day, 8:00+16:00 UTC)...
         console.log("[Auto] Previous run still in progress — skipping this tick.");
         return;
       }
+      // Global single-workflow lock: don't post while a V10 build/publish runs.
+      if (!wlock.tryAcquire("social", { ttlMs: 20 * 60 * 1000 })) {
+        const o = wlock.owner();
+        console.warn(`[Auto] SKIPPED social post — ${o ? o.name + " (pid " + o.owner + ")" : "another workflow"} holds the lock`);
+        return;
+      }
       running = true;
       try {
         // Rotate themes by current day + hour so each run differs and changes daily
@@ -171,6 +178,7 @@ console.log(`[Scheduler] Initializing AUTO mode (2 posts/day, 8:00+16:00 UTC)...
         lastRun = { at: new Date().toISOString(), fb: "err", li: "err", fbError: err.message, liError: err.message };
       } finally {
         running = false;
+        wlock.release("social");
       }
     },
     { scheduled: true, timezone: "UTC" }
