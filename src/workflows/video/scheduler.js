@@ -101,7 +101,7 @@ function initVideoScheduler({ notify: nf } = {}) {
   notify = nf;
   registered = true;
   scheduleNext();
-  console.log("[VideoScheduler] registered (~5 posts/day: 3-6h apart + 15-50 min jitter)");
+  console.log("[VideoScheduler] registered (~3 posts/day: 6-10h apart + 15-50 min jitter)");
 }
 
 function reRegister({ notify: nf } = {}) {

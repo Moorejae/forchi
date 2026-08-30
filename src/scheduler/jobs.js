@@ -115,7 +115,7 @@ function initScheduler() {
     console.log("[Scheduler] Auto mode already registered — skipping duplicate.");
     return;
   }
-  console.log(`[Scheduler] Initializing AUTO mode (5 posts/day, 4h apart, UTC)... (currently ${autoMode.isEnabled() ? "ON ✅" : "OFF ⛔"})`);
+console.log(`[Scheduler] Initializing AUTO mode (2 posts/day, 8:00+16:00 UTC)... (currently ${autoMode.isEnabled() ? "ON ✅" : "OFF ⛔"})`);
 
   cronTask = cron.schedule(
     AUTO_SCHEDULE,

@@ -4,6 +4,12 @@ const { generateContentAndVisualTopic, generateFacebookPost, generateLinkedInPos
 const { generate } = require("../../llm/provider");
 const { detectImageMime } = require("./imageMime");
 const sharp = require("sharp");
+const { execFile } = require("child_process");
+const { promisify } = require("util");
+const fs = require("fs");
+const path = require("path");
+const os = require("os");
+const execFileP = promisify(execFile);
 
 // Facebook/LinkedIn accept JPEG + PNG (not WebP). Hosted FLUX returns WebP, so we
 // normalize any non-JPEG/PNG image to a high-quality JPEG before posting.
@@ -17,6 +23,38 @@ async function normalizeImage(buf) {
   } catch (err) {
     console.warn("[Image API] Image normalize failed, using as-is:", err.message);
     return buf;
+  }
+}
+
+// ── Vertex AI (reliable, off ZeroGPU) — TOP TIER for social images (2026-08-30) ──
+// The V10 pipeline's image_generator.py (Gemini 2.5 flash image via Vertex REST,
+// service-account creds in .env) is dependable and cheap (~$0.03/img). It is NOT
+// ZeroGPU-bound, so it never hits the shared-pool exhaustion that made the old
+// social chain fall through to low-quality Pollinations. We shell out to it with
+// a single prompt and read back the PNG.
+const BASE = path.resolve(__dirname, "..", "..", "..");
+function vertexPython() {
+  return process.platform === "win32"
+    ? path.join(BASE, ".venv", "Scripts", "python.exe")
+    : path.join(BASE, ".venv", "bin", "python");
+}
+async function generateVertexImage(prompt) {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "vtximg_"));
+  try {
+    console.log(`[Image API] Generating via Vertex Gemini (top tier): "${prompt.slice(0, 80)}"...`);
+    await execFileP(vertexPython(), [
+      path.join("image_generator.py"),
+      "--prompts", prompt,
+      "--out", tmpDir,
+      "--concurrency", "1",
+    ], { cwd: BASE, timeout: 180000, maxBuffer: 64 * 1024 * 1024 });
+    const files = fs.readdirSync(tmpDir).filter((f) => f.endsWith(".png"));
+    if (!files.length) throw new Error("Vertex: no png produced");
+    const buf = fs.readFileSync(path.join(tmpDir, files[0]));
+    if (!buf || buf.length < 1000) throw new Error("Vertex: empty image");
+    return buf;
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
   }
 }
 
@@ -196,7 +234,16 @@ async function generateZeroGPUImage(prompt) {
 }
 
 async function generateImageWithFallback(prompt) {
-  // Tier 1: Hosted FLUX.1-dev (KingNish, 24/7) — best quality, uses the account's
+  // Tier 1: Vertex AI Gemini image (reliable, off ZeroGPU, ~$0.03/img). The V10
+  // pipeline's generator — same service-account creds. Avoids the ZeroGPU quota
+  // exhaustion that used to drop social posts to low-quality fallback images.
+  try {
+    return await generateVertexImage(prompt);
+  } catch (err) {
+    console.warn(`[Image API] Vertex failed: ${err.message} — trying hosted FLUX...`);
+  }
+
+  // Tier 2: Hosted FLUX.1-dev (KingNish, 24/7) — best quality, uses the account's
   // PRO ZeroGPU quota via the x-hf-authorization header.
   try {
     return await generateHostedFLUXImage(prompt);
@@ -204,28 +251,28 @@ async function generateImageWithFallback(prompt) {
     console.warn(`[Image API] Hosted FLUX failed: ${err.message} — trying hosted SDXL-Lightning...`);
   }
 
-  // Tier 2: Hosted SDXL-Lightning (radames, 24/7, reliable, 1024x1024)
+  // Tier 3: Hosted SDXL-Lightning (radames, 24/7, reliable, 1024x1024)
   try {
     return await generateHostedImage(prompt);
   } catch (err) {
     console.warn(`[Image API] Hosted SDXL-Lightning failed: ${err.message} — trying our ZeroGPU Space...`);
   }
 
-  // Tier 3: Our own ZeroGPU Space (fp8 FLUX / DreamShaper)
+  // Tier 4: Our own ZeroGPU Space (fp8 FLUX / DreamShaper)
   try {
     return await generateZeroGPUImage(prompt);
   } catch (err) {
     console.warn(`[Image API] ZeroGPU failed: ${err.message} — falling back to Pollinations...`);
   }
 
-  // Tier 4: Pollinations (free, always available)
+  // Tier 5: Pollinations (free, always available)
   try {
     return await generateImageFree(prompt);
   } catch (err) {
     console.warn(`[Image API] Pollinations failed: ${err.message} — trying FLUX router...`);
   }
 
-  // Tier 5: FLUX via HF router (requires HF Inference credits)
+  // Tier 6: FLUX via HF router (requires HF Inference credits)
   const hfToken = process.env.HF_TOKEN || process.env.HF_ACCESS_TOKEN;
   if (!hfToken) {
     console.warn("[Image API] No HF token — skipping FLUX fallback.");

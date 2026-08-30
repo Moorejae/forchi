@@ -66,8 +66,13 @@ def contabo_available():
 
 def render_contabo(text, out_dir, mode='clean', seed=-1, max_len=220, timeout=3600):
     """Render the full script via the Contabo F5-TTS worker -> out_dir/pN.wav.
-    Returns the same list-of-dicts shape as render_script()."""
+    Returns the same list-of-dicts shape as render_script().
+
+    SELF-HEALING (2026-08-30): job ID is a content-hash of the script so re-runs
+    reuse the same per-job subdir and the worker skips already-rendered phrases;
+    downloads from /opt/voice/out/<job_stem>/ (the worker's per-job layout)."""
     import paramiko
+    import hashlib
     os.makedirs(out_dir, exist_ok=True)
     phrases = split_phrases(text, max_len=max_len)
     n = len(phrases)
@@ -75,11 +80,16 @@ def render_contabo(text, out_dir, mode='clean', seed=-1, max_len=220, timeout=36
 
     # manifest the worker understands: one scene per phrase (single shot)
     man = {"scenes": [{"label": f"phrase {i}", "shots": [{"text": ph}]} for i, ph in enumerate(phrases, 1)]}
+    digest = hashlib.sha1(json.dumps(man, sort_keys=True).encode("utf-8")).hexdigest()[:12]
 
     pw = _contabo_env("CONTABO_LOGIN_PASSWORD")
     c = paramiko.SSHClient()
     c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     c.connect(_CONTABO_HOST, port=22, username=_CONTABO_USER, password=pw, timeout=30)
+    try:
+        c.get_transport().set_keepalive(15)
+    except Exception:
+        pass
 
     def rcmd(cmd, t=60):
         i, o, e = c.exec_command(cmd, timeout=t)
@@ -90,7 +100,7 @@ def render_contabo(text, out_dir, mode='clean', seed=-1, max_len=220, timeout=36
     try:
         rcmd(f"mkdir -p {_CONTABO_JOBS} {_CONTABO_OUT}")
         sftp = c.open_sftp()
-        job = f"{_CONTABO_JOBS}/job_{int(time.time())}.json"
+        job = f"{_CONTABO_JOBS}/job_{digest}.json"
         tmp = job + ".tmp"
         with sftp.open(tmp, "w") as f:
             f.write(json.dumps(man))
@@ -102,7 +112,14 @@ def render_contabo(text, out_dir, mode='clean', seed=-1, max_len=220, timeout=36
         done, failed = base + ".done", base + ".failed"
         t0 = time.time()
         while time.time() - t0 < timeout:
-            rc, out = rcmd(f"ls {done} {failed} 2>/dev/null")
+            try:
+                rc, out = rcmd(f"ls {done} {failed} 2>/dev/null")
+            except (EOFError, OSError) as e:
+                print(f'  [voice] conn lost ({str(e)[:40]}) — reconnect', flush=True)
+                c.close()
+                c = paramiko.SSHClient(); c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                c.connect(_CONTABO_HOST, port=22, username=_CONTABO_USER, password=pw, timeout=30)
+                continue
             if done.split("/")[-1] in out:
                 print('  [voice] Contabo worker completed ✓', flush=True)
                 break
@@ -114,10 +131,12 @@ def render_contabo(text, out_dir, mode='clean', seed=-1, max_len=220, timeout=36
         else:
             raise RuntimeError(f"Contabo voice timeout after {timeout}s")
 
+        job_stem = os.path.basename(job).rsplit(".", 1)[0]
+        remote_dir = f"{_CONTABO_OUT}/{job_stem}"
         sftp = c.open_sftp()
         results = []
         for i in range(1, n + 1):
-            remote = f"{_CONTABO_OUT}/r{i:02d}.wav"
+            remote = f"{remote_dir}/r{i:02d}.wav"
             local = os.path.join(out_dir, f"p{i}.wav")
             try:
                 st = sftp.stat(remote)
