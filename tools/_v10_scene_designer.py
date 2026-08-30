@@ -1,9 +1,9 @@
 # V10 SCENE DESIGNER — the stage between script and images.
-# A Google image model (Nano Banana family via the enterprise Agent Platform client)
-# reads each script scene (setting / characters / action / frames) and writes the
-# FINAL per-frame image prompts: one stable background + 3 camera/object variations,
+# A Google text model (Gemini flash via REST, GEMINI_KEYS waterfall) reads each
+# script scene (setting / characters / action / frames) and writes the FINAL
+# per-frame image prompts: one stable background + camera/object variations,
 # all with the consistent narrator (red top, black trousers) and period-clothed
-# characters. Also splits each scene's narration into 3 chunks (one per frame).
+# characters. Also splits each scene's narration into chunks (one per frame).
 #
 # Input : runDir/manifest.json  (script gen output: scenes[].narration/setting/characters/action/frames)
 # Output: runDir/manifest.json  (pipeline format:   scenes[].shots[].text/.img, 3 shots per scene)
@@ -11,8 +11,6 @@
 #
 # CLI: python tools/_v10_scene_designer.py <runDir>
 import os, sys, json, re, time, urllib.request, concurrent.futures
-from google import genai
-from google.genai import types
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
