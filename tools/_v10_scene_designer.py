@@ -24,8 +24,17 @@ def env(name):
 
 # The SCENE DESIGNER is a PROMPT-WRITING (text) task — use TEXT models via the same
 # REST path the script generator uses (image models reject TEXT-only requests with 400).
-KEY = env('GEMINI_PAID_API_KEY') or env('Agent_Platform_key')
-DESIGNER_MODELS = ["gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.7-flash"]
+# Key waterfall: the proven GEMINI_KEYS list (works on the VPS) first, falling back to
+# the single paid key. Same pattern as v10ScriptGen.js.
+def _gemini_keys():
+    keys = [k.strip() for k in env('GEMINI_KEYS').split(',') if k.strip()]
+    paid = env('GEMINI_PAID_API_KEY') or env('Agent_Platform_key')
+    if keys:
+        return keys
+    return [paid] if paid else []
+
+KEYS = _gemini_keys()
+DESIGNER_MODELS = ["gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.7-flash", "gemini-2.5-flash", "gemini-2.0-flash"]
 
 NARRATOR = ("the NARRATOR stickman host — a GIANT (drawn MUCH larger than every story character, "
             "looming over the scenes or head-and-shoulders above the story world) with a large spherical "
@@ -79,12 +88,14 @@ def split_narration(text, n):
 
 
 def call_gemini(prompt):
-    """Text-model REST call (same proven path as v10ScriptGen). Returns parsed JSON."""
-    for model in DESIGNER_MODELS:
-        for attempt in range(3):
+    """Text-model REST call (same proven path as v10ScriptGen). Returns parsed JSON.
+    Iterates keys x models with a 60s timeout each so a dead key/model never hangs."""
+    last = "no keys"
+    for key in KEYS:
+        for model in DESIGNER_MODELS:
             try:
                 url = (f"https://generativelanguage.googleapis.com/v1beta/models/{model}"
-                       f":generateContent?key={KEY}")
+                       f":generateContent?key={key}")
                 body = json.dumps({
                     "contents": [{"role": "user", "parts": [{"text": prompt}]}],
                     "generationConfig": {"temperature": 0.4, "maxOutputTokens": 6000,
@@ -92,17 +103,18 @@ def call_gemini(prompt):
                 }).encode("utf-8")
                 req = urllib.request.Request(url, data=body,
                                              headers={"Content-Type": "application/json"})
-                with urllib.request.urlopen(req, timeout=180) as resp:
+                with urllib.request.urlopen(req, timeout=60) as resp:
                     j = json.loads(resp.read().decode("utf-8"))
                 txt = "".join(p.get("text", "") for p in j["candidates"][0]["content"]["parts"])
                 m = re.search(r'\{[\s\S]*\}', txt)
                 if m:
                     return json.loads(m.group(0))
+                last = "no JSON in response"
             except Exception as e:
                 last = str(e)
-                print(f"   [designer] {model} a{attempt+1}: {last[:100]}", flush=True)
-                time.sleep(8 * (attempt + 1))
-    raise RuntimeError("scene designer: all models failed")
+                print(f"   [designer] {model}: {last[:100]}", flush=True)
+                time.sleep(2)
+    raise RuntimeError("scene designer: all keys/models failed: " + last[:200])
 
 
 def design_scene(sc, idx, chunks):
