@@ -133,11 +133,68 @@ def synthesize(text):
     return out_wav
 
 
+def _synth_worker(args):
+    """One scene synthesis in a child process (own engine). Args tuple:
+    (i, text, out_wav, ref_wav, ref_text, out_dir). Uses fewer threads per
+    process so N parallel workers together use all cores."""
+    i, text, out_wav, ref_wav, ref_text, out_dir = args
+    global _engine
+    try:
+        import torch
+        thr = int(os.environ.get("VOICE_THREADS", "2"))
+        torch.set_num_threads(max(1, thr))
+    except Exception:
+        pass
+    if _engine is None:
+        from f5_tts.api import F5TTS
+        _engine = F5TTS(device="cpu")
+    t0 = time.time()
+    _engine.infer(
+        ref_file=ref_wav,
+        ref_text=ref_text or None,
+        gen_text=text,
+        file_wave=out_wav,
+        remove_silence=False,
+        speed=0.85,
+        seed=7,
+        cfg_strength=2.0,
+        nfe_step=int(os.environ.get("VOICE_NFE_STEP", "16")),
+    )
+    return i, out_wav, round(time.time() - t0, 1)
+
+
+def _run_task_retry(task, retries=2):
+    """Run one scene render, retrying on transient failure so a single bad scene
+    doesn't kill the whole job (self-healing). Returns (i, out_wav, secs) or
+    raises after exhausting retries."""
+    last = None
+    for attempt in range(retries + 1):
+        try:
+            return _synth_worker(task)
+        except Exception as e:
+            last = e
+            print(f"  [voice] scene {task[0]}: attempt {attempt + 1} failed ({str(e)[:80]}) — retrying", flush=True)
+            time.sleep(3 * (attempt + 1))
+    raise last
+
+
 def synth_manifest(manifest_path, voice_dir):
-    """V10 pipeline mode: read manifest.json, render one wav per scene into voice_dir."""
+    """V10 pipeline mode: read manifest.json, render one wav per scene into voice_dir.
+    Scenes render in PARALLEL (VOICE_WORKERS processes) so all CPU cores are used —
+    identical quality, ~N x faster wall-clock on multi-scene jobs. Memory-bound:
+    each process loads the ~2GB model, so cap VOICE_WORKERS to available RAM
+    (default 2 on the 4 vCPU / 7.8GB box).
+
+    SELF-HEALING (2026-08-30): (a) per-scene retry via _run_task_retry so one
+    transient failure doesn't kill the whole job; (b) scenes whose rNN.wav already
+    exists non-empty are skipped, so re-submitting the same manifest (deterministic
+    job id) only renders the missing scenes."""
+    import concurrent.futures as cf
     man = json.load(open(manifest_path, encoding="utf-8"))
     Path(voice_dir).mkdir(parents=True, exist_ok=True)
-    results = []
+    workers = max(1, int(os.environ.get("VOICE_WORKERS", "2")))
+
+    jobs = []
     for i, sc in enumerate(man.get("scenes", []), 1):
         text = " ".join((sh.get("text") or "").strip() for sh in sc.get("shots", []) if (sh.get("text") or "").strip())
         if not text:
@@ -145,23 +202,42 @@ def synth_manifest(manifest_path, voice_dir):
         out = os.path.join(voice_dir, f"r{i:02d}.wav")
         if os.path.exists(out) and os.path.getsize(out) > 0:
             print(f"  [voice] scene {i}: cached", flush=True)
-            results.append({"index": i, "wav": out})
             continue
-        print(f"  [voice] scene {i}: synthesizing on CPU ({len(text.split())} words)", flush=True)
-        t0 = time.time()
-        wav = synthesize(text)
-        # rename into the rXX.wav convention the assembler expects
-        os.replace(wav, out)
-        results.append({"index": i, "wav": out})
-        print(f"  [voice] scene {i}: done in {round(time.time()-t0)}s", flush=True)
-    print(f"[voice] done {len(results)} scenes -> {voice_dir}", flush=True)
+        jobs.append((i, text, out))
+
+    if not jobs:
+        print(f"[voice] done 0 new scenes -> {voice_dir}", flush=True)
+        return []
+
+    print(f"  [voice] {len(jobs)} scenes to synthesize across {workers} worker(s)", flush=True)
+    t_start = time.time()
+    tasks = [(i, txt, out, REF_WAV, REF_TEXT, OUT_DIR) for (i, txt, out) in jobs]
+    results = []
+    if workers <= 1:
+        for t in tasks:
+            results.append(_run_task_retry(t))
+    else:
+        # spawn-process pool so each worker has its own model (no GIL contention)
+        with cf.ProcessPoolExecutor(max_workers=workers) as ex:
+            futs = {ex.submit(_run_task_retry, t): t[0] for t in tasks}
+            for fut in cf.as_completed(futs):
+                i, out_wav, secs = fut.result()  # raises after per-scene retries exhausted
+                print(f"  [voice] scene {i}: done in {secs}s", flush=True)
+                results.append({"index": i, "wav": out_wav})
+    print(f"[voice] done {len(results)} scenes in {round(time.time()-t_start)}s -> {voice_dir}", flush=True)
     return results
 
 
 def worker_loop(jobs_dir, voice_dir, poll=15, max_partial=5):
     """Poll jobs_dir for manifest.json; render; move it away. Runs forever.
     Tolerates half-written job files: if a job fails to parse, retry it a few
-    times (the writer may still be flushing) before marking it .failed."""
+    times (the writer may still be flushing) before marking it .failed.
+
+    CRITICAL (2026-08-30): each job renders into its OWN subdir
+    <voice_dir>/<job_stem>/ so rNN.wav filenames from one job can NEVER be
+    mistaken for cached output of a later job (the old shared-dir layout
+    reused stale wavs across jobs — the "War of the Bucket" sample's scenes
+    1-4 got a previous test's audio)."""
     Path(jobs_dir).mkdir(parents=True, exist_ok=True)
     Path(voice_dir).mkdir(parents=True, exist_ok=True)
     print(f"[voice] worker watching {jobs_dir} (every {poll}s)", flush=True)
@@ -170,10 +246,12 @@ def worker_loop(jobs_dir, voice_dir, poll=15, max_partial=5):
         for jf in sorted(Path(jobs_dir).glob("*.json")):
             if jf.suffix == ".json":
                 try:
-                    synth_manifest(str(jf), voice_dir)
+                    job_sub = Path(voice_dir) / jf.stem
+                    job_sub.mkdir(parents=True, exist_ok=True)
+                    synth_manifest(str(jf), str(job_sub))
                     jf.rename(jf.with_suffix(".done"))
                     attempts.pop(jf.name, None)
-                    print(f"[voice] completed {jf.name}", flush=True)
+                    print(f"[voice] completed {jf.name} -> {job_sub}", flush=True)
                 except Exception as e:
                     attempts[jf.name] = attempts.get(jf.name, 0) + 1
                     print(f"[voice] {jf.name} attempt {attempts[jf.name]}: {str(e)[:100]}", flush=True)

@@ -116,17 +116,41 @@ async function runOnce({ runId, theme, dryRun = false, buildOnly = false, notify
         } else if (stage === "images") {
           // PRIMARY (2026-08-29): Google Vertex AI gemini-2.5-flash-image via
           // image_generator.py (service-account creds, off ZeroGPU, ~8s/image).
-          // FALLBACK: if Vertex produces too few frames, retry with the Agent Platform
-          // Gemini batch (Qwen-Image-Edit as last resort).
+          // SELF-HEALING (2026-08-30): Vertex is rate-limited (HTTP 429) so the
+          // first pass can come up short. image_generator.py is resume-safe AND
+          // has a global rate-gate now, so RETRY Vertex (it only generates the
+          // missing frames on re-runs) before ever touching the $300-credit
+          // Gemini/Qwen fallback. The expensive fallback only runs if Vertex
+          // fails hard (produces <50% frames) AND V10_IMG_FALLBACK != "off".
           const limArgs = limit > 0 ? ["--limit", String(limit)] : [];
           const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
           const needShots = (manifest.scenes || []).reduce((a, s) => a + (s.shots || []).length, 0);
           let files = [];
-          try {
-            py(["image_generator.py", "--manifest", manifestPath, "--images", imagesDir, ...limArgs]);
-            files = fs.readdirSync(imagesDir).filter((f) => /^rep_.*\.png$/.test(f) && fs.statSync(path.join(imagesDir, f)).size > 0);
-          } catch (e) { console.warn(`[v10] images: Vertex path failed (${e.message}) — falling back to Gemini batch`); }
-          if (files.length < needShots) {
+          let vertexOk = false;
+          for (let vpass = 1; vpass <= 3 && !vertexOk; vpass++) {
+            try {
+              py(["image_generator.py", "--manifest", manifestPath, "--images", imagesDir, ...limArgs]);
+              files = fs.readdirSync(imagesDir).filter((f) => /^rep_.*\.png$/.test(f) && fs.statSync(path.join(imagesDir, f)).size > 0);
+            } catch (e) { console.warn(`[v10] images: Vertex pass ${vpass} failed (${e.message})`); }
+            if (files.length >= needShots) { vertexOk = true; break; }
+            if (vpass < 3) {
+              const pct = Math.round(100 * files.length / Math.max(1, needShots));
+              console.warn(`[v10] images: Vertex pass ${vpass} gave ${files.length}/${needShots} (${pct}%) — retrying missing frames`);
+              await new Promise((r) => setTimeout(r, 20000 * vpass)); // let the rate gate cool down
+            }
+          }
+          const allowFallback = (process.env.V10_IMG_FALLBACK || "on").toLowerCase() !== "off";
+          if (!vertexOk && files.length < needShots && allowFallback && files.length >= needShots * 0.5) {
+            // Partial but meaningful: try Vertex once more after a longer pause
+            // (rate window) before spending the paid fallback.
+            console.warn(`[v10] images: Vertex still short (${files.length}/${needShots}) — one more Vertex fill`);
+            await new Promise((r) => setTimeout(r, 60000));
+            try {
+              py(["image_generator.py", "--manifest", manifestPath, "--images", imagesDir, ...limArgs]);
+              files = fs.readdirSync(imagesDir).filter((f) => /^rep_.*\.png$/.test(f) && fs.statSync(path.join(imagesDir, f)).size > 0);
+            } catch (e) { console.warn(`[v10] images: final Vertex fill failed (${e.message})`); }
+          }
+          if (files.length < needShots && allowFallback) {
             console.warn(`[v10] images: Vertex gave ${files.length}/${needShots} — falling back to Gemini/Qwen batch`);
             py(["tools/_v10_gemini_qwen_batch.py", "--manifest", manifestPath, "--images", imagesDir, ...limArgs]);
             files = fs.readdirSync(imagesDir).filter((f) => /^rep_.*\.png$/.test(f) && fs.statSync(path.join(imagesDir, f)).size > 0);
@@ -135,7 +159,7 @@ async function runOnce({ runId, theme, dryRun = false, buildOnly = false, notify
           if (files.length < need) throw new Error(`images: only ${files.length}/${need} frames generated`);
           console.log(`[v10] images: ${files.length} frames present (${needShots} shots required)`);
         } else if (stage === "assemble") {
-          py(["tools/_v10_repl_assemble.py", "v10_" + rid, "--manifest", manifestPath, "--images", imagesDir, "--wavs", voiceDir, "--no-overlays", "--to-downloads", "--sfx"]);
+          py(["tools/_v10_repl_assemble.py", "v10_" + rid, "--manifest", manifestPath, "--images", imagesDir, "--wavs", voiceDir, "--no-overlays", "--no-kenburns", "--to-downloads", "--sfx"]);
           if (!fs.existsSync(mp4) || fs.statSync(mp4).size < 500000) throw new Error("assemble output missing/too small");
         } else if (stage === "thumb") {
           const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));

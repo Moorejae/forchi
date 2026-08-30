@@ -4,10 +4,17 @@
 Uploads the run's manifest.json to the VPS jobs dir, waits for the worker to
 render rXX.wav per scene, downloads them into the local voice dir.
 
+SELF-HEALING / RESUME (2026-08-30): the job ID is a content-hash of the manifest
+(not a timestamp), so if the pipeline retries or re-runs the same manifest, it
+re-submits the SAME job -> the worker renders into the SAME per-job subdir and
+skips scenes whose rNN.wav already exists (it caches by existing non-empty wav).
+That turns a failed build's retry from "re-render all N scenes" into "render only
+the missing ones".
+
 Usage:
-    python tools/_v10_contabo_voice.py <manifest.json> <local_voice_dir> [--timeout 1800]
+    python tools/_v10_contabo_voice.py <manifest.json> <local_voice_dir> [--timeout 3600]
 """
-import os, sys, json, time, argparse, stat
+import os, sys, json, time, argparse, stat, hashlib
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -68,7 +75,10 @@ def main():
     print(f"[v10voice] {n_scenes} scenes -> Contabo CPU worker", flush=True)
 
     os.makedirs(args.voice_dir, exist_ok=True)
-    job = REMOTE_JOBS.rstrip("/") + f"/job_{int(time.time())}.json"
+    # Deterministic job ID from the manifest content, so retries/re-runs reuse the
+    # same per-job subdir and the worker skips already-rendered scenes.
+    digest = hashlib.sha1(json.dumps({"scenes": scenes}, sort_keys=True).encode("utf-8")).hexdigest()[:12]
+    job = REMOTE_JOBS.rstrip("/") + f"/job_{digest}.json"
 
     c = connect()
     try:
@@ -102,11 +112,15 @@ def main():
             print(f"[v10voice] TIMEOUT after {args.timeout}s", file=sys.stderr)
             sys.exit(3)
 
-        # download rXX.wav for each scene
+        # download rXX.wav for each scene (from the per-job subdir — the worker
+        # now renders each job into /opt/voice/out/<job_stem>/ so stale wavs from
+        # earlier jobs are never mistaken for this job's output)
+        job_stem = os.path.basename(job).rsplit(".", 1)[0]
+        remote_dir = REMOTE_VOICE.rstrip("/") + "/" + job_stem
         sftp = c.open_sftp()
         got = 0
         for i in range(1, n_scenes + 1):
-            remote = REMOTE_VOICE.rstrip("/") + f"/r{i:02d}.wav"
+            remote = remote_dir + f"/r{i:02d}.wav"
             local = os.path.join(args.voice_dir, f"r{i:02d}.wav")
             try:
                 st = sftp.stat(remote)

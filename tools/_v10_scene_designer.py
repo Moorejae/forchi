@@ -53,7 +53,7 @@ STYLE_DARK = ("V10 noir graphic-novel art style: dark low-key background, deep i
               "warm amber and crimson rim lighting on the characters. NO text, NO letters, NO numbers, "
               "NO symbols, NO gibberish.")
 STYLE = STYLE_LIGHT
-MICRO_FRAMES = int(os.environ.get("V10_FRAMES_PER_SCENE", "4"))  # micro-frames per scene (4-6)
+MICRO_FRAMES = int(os.environ.get("V10_FRAMES_PER_SCENE", "6"))  # micro-frames per scene (4-6)
 
 
 def split_narration(text, n):
@@ -115,21 +115,27 @@ def design_scene(sc, idx, chunks):
     prompt = (f"You are the V10 SCENE DESIGNER. Turn ONE script scene into {n_frames} MICRO-FRAME image "
               f"prompts. Each micro-frame must VISUALLY DEPICT what its narration chunk SAYS (the object, "
               f"action, expression or prop the words describe) — the picture must match the words spoken "
-              f"at that moment. All frames share the SAME locked background and SAME characters (framing "
-              f"consistent) and differ by what the narration describes.\n\n{STYLE}\n\nNARRATOR: {NARRATOR}.\n\n"
+              f"at that moment. This is CONCEPTUAL ILLUSTRATION: the FRAME is FIXED (same camera, same angle, "
+              f"same framing, same composition, center subject stays centered) across ALL frames, and ONLY the "
+              f"objects/characters inside the frame change — they may MOVE, APPEAR, or DISAPPEAR as the narration "
+              f"describes (e.g. a ball is removed, a second person steps away, a flag appears). Never change the "
+              f"camera or the composition.\n\n{STYLE}\n\nNARRATOR: {NARRATOR}.\n\n"
               f"SCENE {idx}:\n"
               f"- setting (background, must be STABLE/identical across ALL {n_frames} frames): {sc.get('setting') or '(default: warm whiteboard studio)'}\n"
-              f"- characters (keep outfits consistent + all same size): {sc.get('characters') or 'narrator only'}\n"
+              f"- characters (keep outfits consistent + all same size; may be added/removed per chunk): {sc.get('characters') or 'narrator only'}\n"
               f"- story beat / action: {sc.get('action') or 'the narrator narrates'}\n"
               f"NARRATION CHUNKS (frame K must depict chunk K):\n{chunk_lines}\n\n"
               f"Write STRICT JSON ONLY:\n"
               f"{{\"bg\": \"<ONE complete background prompt — the setting + its objects, reusable in every frame>\", "
               f"\"frames\": [\"<frame1: bg + narrator + characters, depicting chunk 1>\", "
-              f"\"<frame2: EXACT same bg + characters + SAME camera, depicting chunk 2>\", "
+              f"\"<frame2: EXACT same bg + SAME camera/framing, depicting chunk 2 (objects/characters may differ)>\", "
               f"... {n_frames} frames total ...]}}\n\n"
               f"Rules: every frame prompt must START with the same background sentence (verbatim). The camera "
-              f"NEVER moves between frames. Each frame depicts its narration chunk's content. Always include "
-              f"the narrator (red top, black trousers). All characters same size. NO text anywhere.")
+              f"NEVER moves and the framing NEVER changes between frames (same angle, same distances, center "
+              f"subject stays centered). Each frame depicts its narration chunk's content — objects/characters "
+              f"may be added, removed, or repositioned WITHIN the fixed frame as the words describe. Always "
+              f"include the narrator (red top, black trousers) unless the chunk removes him. All characters "
+              f"same size. NO text anywhere.")
     data = call_gemini(prompt)
     frames = [(f or "").strip() for f in (data.get("frames") or [])]
     frames = frames[:n_frames]

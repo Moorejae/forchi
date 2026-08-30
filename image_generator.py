@@ -32,9 +32,32 @@ python image_generator.py --prompts-file prompts.txt --out out_dir --concurrency
 python image_generator.py --manifest temp_media/v10_run/<run>/manifest.json \
     --images temp_media/v10_run/<run>/images --concurrency 6
 """
-import os, sys, json, base64, random, time, argparse, urllib.request, urllib.error
+import os, sys, json, base64, random, time, argparse, urllib.request, urllib.error, threading
 import concurrent.futures
 from pathlib import Path
+
+# ---- GLOBAL RATE GATE (shared across ALL worker threads) ----
+# Vertex's gemini-2.5-flash-image is heavily rate-limited (HTTP 429) after a few
+# images in a burst. When ANY thread sees a 429 it sets this shared cooldown; every
+# thread waits for it before its next request. Prevents the whole pool hammering the
+# API simultaneously (which kept it saturated and made a 24-image batch take 28 min).
+_GATE_LOCK = threading.Lock()
+_GATE_UNTIL = [0.0]
+
+
+def _wait_gate():
+    while True:
+        with _GATE_LOCK:
+            t = _GATE_UNTIL[0]
+        if time.time() >= t:
+            return
+        time.sleep(0.5)
+
+
+def _signal_rate_limit(extra_cooldown=12.0):
+    with _GATE_LOCK:
+        _GATE_UNTIL[0] = max(_GATE_UNTIL[0], time.time() + extra_cooldown)
+
 
 
 # ---- load .env (so GOOGLE_APPLICATION_CREDENTIALS / project id are honored) ----
@@ -107,7 +130,13 @@ def _gen_one(prompt, loc, timeout=120):
            f"/locations/{loc}/publishers/google/models/{PRIMARY_MODEL}:generateContent")
     payload = {
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"responseModalities": ["IMAGE"]},
+        "generationConfig": {
+            "responseModalities": ["IMAGE"],
+            # Match the standard 16:9 video frame (1920x1080). Without this the
+            # model returns SQUARE 1024x1024 images that get force-cropped in the
+            # assembler (narrator/character cut off top/bottom).
+            "imageConfig": {"aspectRatio": "16:9"},
+        },
     }
     req = urllib.request.Request(
         url, data=json.dumps(payload).encode(),
@@ -127,9 +156,16 @@ def _gen_one(prompt, loc, timeout=120):
 
 
 def _gen_with_retry(prompt, max_retries=6, base=1.6, jitter=1.2):
-    """Synchronous retry across locations; exp backoff + jitter on transient errors."""
+    """Synchronous retry across locations; exp backoff + jitter on transient errors.
+
+    GLOBAL RATE GATE (2026-08-30): Vertex's gemini-2.5-flash-image is heavily
+    rate-limited (HTTP 429) after ~3-5 images in a burst. When ANY thread sees a
+    429, it sets the shared cooldown (_signal_rate_limit) that ALL threads respect
+    before their next attempt — otherwise the whole thread pool hammers the API
+    simultaneously and it stays saturated (a 24-image batch took 28 min before)."""
     last_err = None
     for attempt in range(max_retries):
+        _wait_gate()
         loc = LOCATIONS[attempt % len(LOCATIONS)]
         try:
             return _gen_one(prompt, loc)
@@ -141,6 +177,9 @@ def _gen_with_retry(prompt, max_retries=6, base=1.6, jitter=1.2):
             except Exception:
                 pass
             retryable = code in (429, 500, 502, 503, 504) or "quota" in msg.lower()
+            if code == 429 or "rate" in msg.lower() or "quota" in msg.lower():
+                # Signal a global cooldown so other threads stop hammering.
+                _signal_rate_limit(extra_cooldown=12.0)
             last_err = f"HTTP {code} {msg}"
             if not retryable:
                 # non-transient (400/403/404) — rotate to next region and continue
@@ -208,7 +247,7 @@ def main():
     ap.add_argument("--manifest", default="", help="V10 manifest.json (pipeline mode)")
     ap.add_argument("--images", default="", help="output dir for --manifest mode")
     ap.add_argument("--out", default="out_images", help="output dir")
-    ap.add_argument("--concurrency", type=int, default=5, help="parallel requests")
+    ap.add_argument("--concurrency", type=int, default=3, help="parallel requests (lower = gentler on rate limit)")
     ap.add_argument("--style", default=DEFAULT_STYLE, help="style prefix (default = V10)")
     args = ap.parse_args()
 

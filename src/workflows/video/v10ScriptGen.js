@@ -125,10 +125,14 @@ const CHAR_SPEC = `V10 colorful storybook whiteboard art style: warm, gentle, fa
 function buildPrompt(theme, researchText) {
   // Target length is configurable (V10_TARGET_MINUTES; default 5). Everything
   // downstream (word count, scene count, act timings) scales off it.
-  const N_WORDS = Math.max(500, Math.round(TMIN * 150));
-  const N_WORDS_LO = N_WORDS - 40;
-  const N_WORDS_HI = N_WORDS + 40;
-  const N_SCENES = Math.max(9, Math.round(TMIN * 2.2));
+  // Measured: the Victor Moore voice (F5/Higgs) actually runs ~200 wpm of spoken
+  // narration (a 750-word "5-min" script measured 3:42). So target ~200 wpm so the
+  // final video hits the requested runtime, not 130-150.
+  const WPM = parseInt(process.env.V10_WPM || "200", 10);
+  const N_WORDS = Math.max(Math.round(TMIN * 180), Math.round(TMIN * WPM));
+  const N_WORDS_LO = N_WORDS - 60;
+  const N_WORDS_HI = N_WORDS + 60;
+  const N_SCENES = Math.max(4, Math.round(TMIN * 2.6));
   const fmt = (frac) => { const t = TMIN * frac; const m = Math.floor(t); const s = Math.round((t - m) * 60); return `${m}:${String(s).padStart(2, "0")}`; };
   const act1e = fmt(0.15), act2e = fmt(0.5), act3e = fmt(0.8), end = fmt(1.0);
   return `You are a documentary scriptwriter for a family-friendly YouTube channel (adults AND children watch together). Channel rules: grounded & ethical; folklore/historical/Biblical events as psychological case studies; the viewer must walk away with an actionable life insight. Theme for THIS video: "${theme}".
@@ -155,7 +159,7 @@ Then split the script into ${N_SCENES} SCENES (about ${N_SCENES - 2} to ${N_SCEN
 - "setting": the BACKGROUND for this scene (the location and its coloured objects — e.g. "a warm viking longhouse with a glowing hearth, wooden benches, hanging shields, a red woven rug" or "an empty storybook studio with the narrator's colourful desk"). This setting must be STABLE within the scene and consistent across the story.
 - "characters": who is in the scene (e.g. "narrator (red top, black trousers) + Gunnar the viking warrior in a blue tunic"), each with their fixed period outfit
 - "action": ONE clear action/pose the scene shows (what is happening)
-- "frames": 4 MICRO-FRAME image-prompt variations of THIS SAME SCENE (SAME background, SAME camera angle, SAME framing, SAME character positions/sizes/outfits) that differ ONLY by a SMALL ACTION/POSE/EXPRESSION/PROP mutation — the tiny changes that create the "illusion of animation" when cut together ~every 2-3 seconds. e.g. frame 1 = base pose, frame 2 = hand raises / eyebrow furrows, frame 3 = an object pops into the scene or a prop changes state (a door cracks open, a candle gutters), frame 4 = a small expression shift or climactic detail (light spills in, a document is revealed). The camera NEVER moves between frames — the background must remain pixel-identical across all 4 frames; only the character/prop mutates.
+- "frames": 4 MICRO-FRAME image-prompt variations of THIS SAME SCENE (SAME background, SAME camera angle, SAME framing — the FRAME is FIXED, pixel-identical background across all frames). This is CONCEPTUAL ILLUSTRATION: only the objects/characters INSIDE the frame change — they may MOVE, APPEAR, or DISAPPEAR as the narration describes (a ball is removed, a second person steps away, a flag appears, an object pops into the scene). e.g. frame 1 = base pose, frame 2 = a character moves / hand raises / eyebrow furrows, frame 3 = an object pops in or a prop changes state (a door cracks open, a candle gutters), frame 4 = an object disappears or a small expression shift / climactic detail (light spills in, a document is revealed). The camera NEVER moves and the composition NEVER changes between frames — the background must remain pixel-identical across all 4 frames; only the characters/props inside the fixed frame mutate.
 
 Return STRICT JSON ONLY:
 {"title":"...","topic":"...","theme":"...","script":"<full script text>","chapters":[{"label":"...","act":1}],"scenes":[{"n":1,"label":"...","narration":"...","setting":"...","characters":"...","action":"...","frames":["frame1 img prompt","frame2 img prompt","frame3 img prompt"]}]}`;
@@ -173,10 +177,11 @@ async function generate({ theme, outDir }) {
   console.log(`[v10script] got ${(data.scenes || []).length} scenes, title="${data.title}"`);
 
   // ENFORCE TARGET LENGTH — Gemini under-writes the word target (a "5 min" script came
-  // out ~3:40) and the Victor Moore voice runs ~150 wpm, so target ~150 wpm * minutes.
+  // out ~3:40) and the Victor Moore voice runs ~200 wpm, so target ~200 wpm * minutes.
   // If the narration is short, expand each scene's narration in place (keeps the
   // scenes/setting/characters/frames; only lengthens the spoken text).
-  const targetWords = Math.max(500, Math.round(TMIN * 150));
+  const WPM = parseInt(process.env.V10_WPM || "200", 10);
+  const targetWords = Math.max(Math.round(TMIN * 180), Math.round(TMIN * WPM));
   let words = countWords(data.scenes);
   if (words < targetWords * 0.93 && (data.scenes || []).length) {
     console.log(`[v10script] under target (${words}w < ${targetWords}w) — expanding narrations`);
