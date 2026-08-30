@@ -134,11 +134,16 @@ async function runOnce({ runId, theme, dryRun = false, buildOnly = false, notify
           const voiceBackend = (process.env.V10_VOICE_BACKEND || "contabo").toLowerCase();
           if (voiceBackend === "contabo") {
             try {
-              py(["tools/_v10_contabo_voice.py", manifestPath, voiceDir]);
+              // On the VPS (linux) use the LOCAL worker directly (no SSH, no Windows
+              // path bug). On Windows, SSH to the Contabo worker as before.
+              const onVps = process.platform !== "win32";
+              py(onVps
+                ? ["tools/_v10_local_voice.py", manifestPath, voiceDir]
+                : ["tools/_v10_contabo_voice.py", manifestPath, voiceDir]);
               const wavs = fs.existsSync(voiceDir) ? fs.readdirSync(voiceDir).filter((f) => /^r\d\d\.wav$/.test(f) && fs.statSync(path.join(voiceDir, f)).size > 0) : [];
               const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
               const needScenes = manifest.scenes.length;
-              if (wavs.length >= Math.min(needScenes, limit ? needScenes : needScenes)) {
+              if (wavs.length >= needScenes) {
                 console.log(`[v10] voice: Contabo rendered ${wavs.length} scenes`);
                 py(["temp_media/_tighten_voice.py", "--dir", voiceDir]);
               } else {
