@@ -34,10 +34,50 @@ function saveState(p, s) { try { fs.writeFileSync(p, JSON.stringify(s, null, 2))
 function stageDone(s, st) { return s.stages && s.stages[st] && s.stages[st].status === "done"; }
 
 function probeDur(p) {
-  const r = execFileSync(FF, ["-i", p], { encoding: "utf8", stdio: ["ignore", "ignore", "pipe"] });
+  // ffmpeg -i <file> with no output exits 1 but prints Duration on stderr.
+  // Catch the expected failure and parse the duration out of stderr.
+  let r = "";
+  try {
+    r = execFileSync(FF, ["-i", p], { encoding: "utf8", stdio: ["ignore", "ignore", "pipe"] });
+  } catch (e) {
+    r = String((e && e.stderr) || "");
+  }
   const m = (r || "").match(/Duration: (\d+):(\d+):(\d+\.\d+)/);
   if (!m) return 0;
   return +m[1] * 3600 + +m[2] * 60 + +m[3];
+}
+
+// Build an SRT caption file from the manifest + narration wavs so deaf viewers
+// can read what the narrator is saying. Each scene's wav duration is distributed
+// across its shots proportionally to shot word count (matches the assembler sync).
+function buildSrt(manifest, voiceDir) {
+  const scenes = (manifest && manifest.scenes) || [];
+  const fmt = (sec) => {
+    sec = Math.max(0, sec);
+    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+    const s = Math.floor(sec % 60), ms = Math.floor((sec % 1) * 1000);
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")},${String(ms).padStart(3, "0")}`;
+  };
+  const out = [];
+  let idx = 1, t = 0;
+  for (const sc of scenes) {
+    const scn = sc.n || (out.length ? scenes.indexOf(sc) + 1 : 1);
+    const wav = path.join(voiceDir, `r${String(scn).padStart(2, "0")}.wav`);
+    const dur = fs.existsSync(wav) ? probeDur(wav) : 0;
+    const shots = sc.shots || [];
+    const totalWords = shots.reduce((a, sh) => a + String(sh.text || "").split(/\s+/).filter(Boolean).length, 0) || 1;
+    let acc = 0;
+    for (const sh of shots) {
+      const text = String(sh.text || "").trim();
+      if (!text) continue;
+      const w = text.split(/\s+/).length;
+      const d = dur * (w / totalWords);
+      out.push(`${idx++}\n${fmt(t + acc)} --> ${fmt(t + acc + d)}\n${text}\n`);
+      acc += d;
+    }
+    t += dur;
+  }
+  return out.join("\n");
 }
 
 function py(args) {
@@ -200,7 +240,8 @@ async function runOnce({ runId, theme, dryRun = false, buildOnly = false, notify
 
 async function uploadStage(runDir, mp4, thumb, rid) {
   const fsr = require("fs");
-  const { uploadVideo, setThumbnail } = require("./youtube.js");
+  const { uploadVideo, setThumbnail, uploadCaptions } = require("./youtube.js");
+  const { postV10Video } = require("./facebookVideo.js");
   const v10 = require("./v10Metadata.js");
   const manifest = JSON.parse(fsr.readFileSync(path.join(runDir, "manifest.json"), "utf8"));
   const meta = JSON.parse(fsr.readFileSync(path.join(runDir, "meta.json"), "utf8"));
@@ -234,6 +275,19 @@ async function uploadStage(runDir, mp4, thumb, rid) {
   if (thumb && fsr.existsSync(thumb)) {
     try { await setThumbnail(result.videoId, thumb); console.log("[v10] thumbnail set"); } catch (e) { console.warn("[v10] thumb set failed:", e.message); }
   }
+  // captions for deaf viewers (per-scene SRT built from narration + wav timing)
+  try {
+    const srt = buildSrt(manifest, voiceDir);
+    const srtPath = path.join(runDir, "captions.srt");
+    fsr.writeFileSync(srtPath, srt);
+    await uploadCaptions(result.videoId, srtPath);
+    console.log("[v10] captions uploaded");
+  } catch (e) { console.warn("[v10] captions failed:", e.message); }
+  // V10 Facebook page post (long-form video)
+  try {
+    const fbres = await postV10Video(mp4, { title, description: baseTitle });
+    console.log("[v10] facebook posted:", fbres.url);
+  } catch (e) { console.warn("[v10] facebook post failed:", e.message); }
   // record post
   const postsFile = path.join(BASE, "temp_media", "v10_posts.json");
   let posts = []; try { posts = JSON.parse(fsr.readFileSync(postsFile, "utf8")); } catch {}
