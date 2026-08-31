@@ -145,18 +145,18 @@ async function runOnce({ runId, theme, dryRun = false, buildOnly = false, notify
               const needScenes = manifest.scenes.length;
               if (wavs.length >= needScenes) {
                 console.log(`[v10] voice: Contabo rendered ${wavs.length} scenes`);
-                py(["temp_media/_tighten_voice.py", "--dir", voiceDir]);
+                py(["tools/_v10_tighten_voice.py", "--dir", voiceDir]);
               } else {
                 throw new Error(`Contabo gave ${wavs.length}/${needScenes} wavs`);
               }
             } catch (e) {
               console.warn(`[v10] voice: Contabo failed (${e.message}) — falling back to Higgs`);
               py(["tools/_v10_repl_voice.py", "--clone", "--manifest", manifestPath, "--out", voiceDir, ...limArgs]);
-              py(["temp_media/_tighten_voice.py", "--dir", voiceDir]);
+              py(["tools/_v10_tighten_voice.py", "--dir", voiceDir]);
             }
           } else {
             py(["tools/_v10_repl_voice.py", "--clone", "--manifest", manifestPath, "--out", voiceDir, ...limArgs]);
-            py(["temp_media/_tighten_voice.py", "--dir", voiceDir]);
+            py(["tools/_v10_tighten_voice.py", "--dir", voiceDir]);
           }
         } else if (stage === "images") {
           // PRIMARY (2026-08-29): Google Vertex AI gemini-2.5-flash-image via
