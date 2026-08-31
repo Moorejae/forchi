@@ -234,74 +234,75 @@ async function generateZeroGPUImage(prompt) {
 }
 
 async function generateImageWithFallback(prompt) {
-  // Tier 1: Vertex AI Gemini image (reliable, off ZeroGPU, ~$0.03/img). The V10
-  // pipeline's generator — same service-account creds. Avoids the ZeroGPU quota
-  // exhaustion that used to drop social posts to low-quality fallback images.
-  try {
-    return await generateVertexImage(prompt);
-  } catch (err) {
-    console.warn(`[Image API] Vertex failed: ${err.message} — trying hosted FLUX...`);
-  }
-
-  // Tier 2: Hosted FLUX.1-dev (KingNish, 24/7) — best quality, uses the account's
-  // PRO ZeroGPU quota via the x-hf-authorization header.
+  // USER DIRECTIVE (2026-08-31): social (FB/LinkedIn) images come from HF FIRST.
+  // V10 long-form stays on Contabo/Vertex; social posts prefer HF generation.
+  // Tier 1: Hosted FLUX.1-dev (KingNish, 24/7) — best quality via HF.
   try {
     return await generateHostedFLUXImage(prompt);
   } catch (err) {
     console.warn(`[Image API] Hosted FLUX failed: ${err.message} — trying hosted SDXL-Lightning...`);
   }
 
-  // Tier 3: Hosted SDXL-Lightning (radames, 24/7, reliable, 1024x1024)
+  // Tier 2: Hosted SDXL-Lightning (radames, 24/7, reliable, 1024x1024)
   try {
     return await generateHostedImage(prompt);
   } catch (err) {
     console.warn(`[Image API] Hosted SDXL-Lightning failed: ${err.message} — trying our ZeroGPU Space...`);
   }
 
-  // Tier 4: Our own ZeroGPU Space (fp8 FLUX / DreamShaper)
+  // Tier 3: Our own ZeroGPU Space (fp8 FLUX / DreamShaper)
   try {
     return await generateZeroGPUImage(prompt);
   } catch (err) {
     console.warn(`[Image API] ZeroGPU failed: ${err.message} — falling back to Pollinations...`);
   }
 
-  // Tier 5: Pollinations (free, always available)
+  // Tier 4: Pollinations (free, always available)
   try {
     return await generateImageFree(prompt);
   } catch (err) {
     console.warn(`[Image API] Pollinations failed: ${err.message} — trying FLUX router...`);
   }
 
-  // Tier 6: FLUX via HF router (requires HF Inference credits)
+  // Tier 5: FLUX via HF router (requires HF Inference credits)
   const hfToken = process.env.HF_TOKEN || process.env.HF_ACCESS_TOKEN;
-  if (!hfToken) {
-    console.warn("[Image API] No HF token — skipping FLUX fallback.");
-    return null;
-  }
+  if (hfToken) {
+    console.log(`[FLUX Image API] Generating image with prompt: "${prompt}"...`);
+    try {
+      const res = await fetch("https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-dev", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${hfToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ inputs: prompt })
+      });
 
-  console.log(`[FLUX Image API] Generating image with prompt: "${prompt}"...`);
-  try {
-    const res = await fetch("https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-dev", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${hfToken}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ inputs: prompt })
-    });
-
-    if (!res.ok) {
-      const errText = await res.text();
-      console.error(`[FLUX Image API] Error (${res.status}): ${errText}`);
-      return null;
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error(`[FLUX Image API] Error (${res.status}): ${errText}`);
+      } else {
+        const arrayBuffer = await res.arrayBuffer();
+        const buf = Buffer.from(arrayBuffer);
+        if (buf.length > 1000) return buf;
+        console.error("[FLUX Image API] Empty response body");
+      }
+    } catch (err) {
+      console.error("[FLUX Image API] Image generation request failed:", err.message);
     }
-
-    const arrayBuffer = await res.arrayBuffer();
-    return Buffer.from(arrayBuffer);
-  } catch (err) {
-    console.error("[FLUX Image API] Image generation request failed:", err.message);
-    return null;
+  } else {
+    console.warn("[Image API] No HF token — skipping FLUX fallback.");
   }
+
+  // Tier 6 (LAST RESORT): Vertex AI Gemini image — reliable but the user wants
+  // social images on HF; Vertex stays as the safety net (and for V10 on Contabo).
+  try {
+    return await generateVertexImage(prompt);
+  } catch (err) {
+    console.warn(`[Image API] Vertex failed: ${err.message}`);
+  }
+
+  return null;
 }
 
 async function run({ destinations = [], content = "", visualTopic = null }) {

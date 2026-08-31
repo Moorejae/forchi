@@ -54,9 +54,10 @@ async function notify(text) {
   } catch (e) { console.warn("[Standalone] notify failed:", e.message); }
 }
 
-// 5 Shorts/day: random 3-6 HOURS apart PLUS a 15-50 min human-like variation
-const HOURS_MIN = 3;
-const HOURS_MAX = 6;
+// ~3 Shorts/day: random 6-10 HOURS apart PLUS a 15-50 min human-like variation
+// (matches the user's 3/day directive; reduced from the old 5/day 3-6h model).
+const HOURS_MIN = 6;
+const HOURS_MAX = 10;
 const EXTRA_MIN = 15;
 const EXTRA_MAX = 50;
 function randomMins() {
