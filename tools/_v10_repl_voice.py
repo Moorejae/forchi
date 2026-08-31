@@ -7,7 +7,6 @@ Usage:
     .venv\\Scripts\\python.exe tools/_v10_repl_voice.py [--rate -15%] [--limit N]
 """
 import os, sys, json, asyncio, subprocess, re, shutil
-import edge_tts
 import imageio_ffmpeg
 from _paths import BASE
 
@@ -39,6 +38,7 @@ def get_higgs_client():
     return _client
 
 async def synth(text, out_mp3, rate):
+    import edge_tts  # lazy: only needed for the non-clone edge-tts mode (not installed on the VPS)
     com = edge_tts.Communicate(text, VOICE, rate=rate, pitch=PITCH)
     await com.save(out_mp3)
 
