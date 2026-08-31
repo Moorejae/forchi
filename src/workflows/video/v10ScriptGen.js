@@ -28,24 +28,84 @@ const SCRIPTS_DIR = path.join(BASE, "temp_media", "v10_run");
 const TMIN = parseInt(process.env.V10_TARGET_MINUTES || "5", 10);
 const countWords = (scs) => (scs || []).reduce((a, s) => a + ((s.narration || "").split(/\s+/).filter(Boolean).length), 0);
 
-const THEMES = [
-  "Self-Control vs Impulsivity", "Pride, Arrogance, & Pyrrhic Victories",
-  "Hypocrisy, Deception, & Double Lives", "Unchecked Greed & Collective Delusion",
-  "Blind Trust, Rumor, & The Danger of Face-Value Judgments",
-  "Self-Sacrifice & Radical Empathy", "Love, Lust, & Political Manipulation",
-  "Betrayal, Cold Ambition, & False Loyalty", "Power Dynamics, Tyranny, & Mob Psychology",
-  "Slander, Framing, & Emotional Manipulation",
+// THEME CATEGORIES — one per V10 YouTube playlist (user spec 2026-08-30).
+// Rotation is ROUND-ROBIN across the 5 categories so every video lands in a
+// different playlist in turn. Each category's themes clearly belong to it so the
+// topic->playlist classifier routes correctly.
+const THEME_CATEGORIES = [
+  {
+    playlist: "Church & Bible Stories",
+    themes: [
+      "Bible Histories & the Hidden Grace of Scripture",
+      "Modern Church Stories of Faith & Forgiveness",
+      "Ancient Prophets & the Cost of Speaking Truth",
+      "Parables Reimagined for Modern Hearts",
+      "Saints, Monks & Quiet Acts of Courage",
+    ],
+  },
+  {
+    playlist: "Family Stories",
+    themes: [
+      "Family Bonds, Rivalry & the Weight of Inheritance",
+      "Mothers & Fathers Who Gave Everything",
+      "Sibling Loyalty Across Generations",
+      "Household Secrets & the Cost of Keeping Them",
+      "Modern Family, Old Wounds & the Road Back",
+    ],
+  },
+  {
+    playlist: "World Folklore",
+    themes: [
+      "Untold Folklore from Africa, Europe & Asia",
+      "Legends That Explain Human Nature",
+      "Tricksters, Taboos & the Wisdom of Villages",
+      "Myths of Power, Justice & Consequences",
+      "Modern Folklore in an Ancient World",
+    ],
+  },
+  {
+    playlist: "Love & Relationship Stories",
+    themes: [
+      "Love That Outlasted Time & Distance",
+      "Modern Dating & the Ache of Waiting",
+      "Forbidden Love & the Cost of Devotion",
+      "Historical Romances That Broke the Rules",
+      "Marriage, Trust & the Long Game",
+    ],
+  },
+  {
+    playlist: "Book Summaries",
+    themes: [
+      "Book Summary: Wealth, Money & Mindset",
+      "Book Summary: Psychology & Human Nature",
+      "Book Summary: Power, Politics & Influence",
+      "Book Summary: Philosophy, Religion & Spirituality",
+      "Book Summary: Marriage, Friendship & Connection",
+    ],
+  },
 ];
 
 function loadState() { try { return JSON.parse(fs.readFileSync(STATE, "utf8")); } catch { return {}; } }
 function saveState(s) { try { fs.writeFileSync(STATE, JSON.stringify(s, null, 2)); } catch {} }
 
 function pickTheme(state) {
-  const used = state.usedThemes || [];
-  const fresh = THEMES.filter((t) => !used.includes(t));
-  const pool = fresh.length ? fresh : THEMES;
+  // Round-robin across categories: keep a rolling category index in state so each
+  // video is a different topic category (=> a different playlist) in turn.
+  const catIdx = state.categoryIdx || 0;
+  const cat = THEME_CATEGORIES[catIdx % THEME_CATEGORIES.length];
+  // Within the category, rotate themes (avoid repeating until the pool is exhausted).
+  const usedCat = state.usedByCategory || {};
+  const used = usedCat[cat.playlist] || [];
+  const fresh = cat.themes.filter((t) => !used.includes(t));
+  const pool = fresh.length ? fresh : cat.themes;
   const theme = pool[Math.floor(Math.random() * pool.length)];
-  state.usedThemes = [...(state.usedThemes || []), theme].slice(-THEMES.length);
+  usedCat[cat.playlist] = [...used, theme].slice(-cat.themes.length);
+  state.usedByCategory = usedCat;
+  state.categoryIdx = catIdx + 1;
+  state.category = cat.playlist;
+  state.usedThemes = [...(state.usedThemes || []), theme].slice(-20);
+  saveState(state);
+  console.log(`[v10script] category: ${cat.playlist} | theme: ${theme}`);
   return theme;
 }
 
@@ -187,8 +247,9 @@ async function generate({ theme, outDir }) {
   fs.mkdirSync(outDir, { recursive: true });
   const st = loadState();
   const useTheme = theme || pickTheme(st);
+  const category = st.category || null; // set by pickTheme (playlist category)
   saveState(st);
-  console.log(`[v10script] theme: ${useTheme}`);
+  console.log(`[v10script] theme: ${useTheme} (category: ${category || "n/a"})`);
   const researchText = await research(useTheme);
   console.log(`[v10script] research: ${researchText.length} chars`);
   let data = await callGemini(buildPrompt(useTheme, researchText));
@@ -224,13 +285,14 @@ async function generate({ theme, outDir }) {
   const manifest = { style: "V10 colorful storybook whiteboard, narrator red-top host, period-clothed characters", scenes };
   fs.writeFileSync(path.join(outDir, "manifest.json"), JSON.stringify(manifest, null, 1), "utf8");
   fs.writeFileSync(path.join(outDir, "meta.json"), JSON.stringify({
-    title: data.title, topic: data.topic, theme: useTheme, script: data.script, chapters: data.chapters || [],
+    title: data.title, topic: data.topic, theme: useTheme, category,
+    script: data.script, chapters: data.chapters || [],
   }, null, 2), "utf8");
   fs.writeFileSync(path.join(outDir, "narration.txt"), data.script || "", "utf8");
   return { manifest, meta: data, outDir };
 }
 
-module.exports = { generate, THEMES, SCRIPTS_DIR };
+module.exports = { generate, THEME_CATEGORIES, SCRIPTS_DIR };
 
 if (require.main === module) {
   const fs2 = require("fs");

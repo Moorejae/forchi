@@ -288,6 +288,22 @@ async function uploadStage(runDir, mp4, thumb, rid) {
     await uploadCaptions(result.videoId, srtPath);
     console.log("[v10] captions uploaded");
   } catch (e) { console.warn("[v10] captions failed:", e.message); }
+  // V10 playlist: auto-sort into the topic category playlist (5 fixed playlists)
+  try {
+    const { ensureV10Playlist, addVideoToPlaylist } = require("./v10Playlists.js");
+    const { refreshAccess } = require("./youtube.js");
+    const token = await refreshAccess();
+    // Prefer the category written by v10ScriptGen; else classify from topic/theme.
+    const forced = meta.category ? { title: meta.category } : null;
+    const pl = forced
+      ? await (async () => {
+          const { findOrCreatePlaylist } = require("./v10Playlists.js");
+          return findOrCreatePlaylist(token, forced.title, `V10 long-form stories — ${forced.title}`);
+        })()
+      : await ensureV10Playlist(token, meta.topic, meta.theme);
+    await addVideoToPlaylist(token, pl.playlistId, result.videoId);
+    console.log(`[v10] added to playlist "${pl.title}" (${pl.playlistId})`);
+  } catch (e) { console.warn("[v10] playlist add failed:", e.message); }
   // V10 Facebook page post (long-form video)
   try {
     const fbres = await postV10Video(mp4, { title, description: baseTitle });

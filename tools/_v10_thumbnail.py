@@ -34,10 +34,12 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FF = (os.environ.get("FFMPEG_BIN") or shutil.which("ffmpeg") or imageio_ffmpeg.get_ffmpeg_exe())
 
 W, H = 1280, 720
-# ---- Movie-poster palette (light text on cinematic dark) ----
+# ---- Cream-top storybook palette (user's reorganized look) ----
+CREAM = (248, 243, 230)        # warm cream top band
+INK = (24, 22, 20)             # near-black hook text on cream
 WHITE = (255, 255, 255)
 RED = (229, 57, 53)            # #E53935 — accent keyword
-GOLD = (212, 160, 23)          # #D4A017 — rule / stamp
+GOLD = (212, 160, 23)          # #D4A017 — stamp
 BLACK = (8, 10, 14)            # #080A0E — deep cinematic
 # Ultra-bold display fonts. Anton is the headline (downloaded in temp_media/fonts);
 # Montserrat variable renders THIN in PIL so it stays last.
@@ -208,46 +210,39 @@ def make_thumbnail(src, title, out_jpg, at_sec=30, fontsize=96, hook=None, accen
         nh = int(iw / ratio); y0 = (ih - nh) // 2; im = im.crop((0, y0, iw, y0 + nh))
     im = im.resize((W, H), Image.LANCZOS)
 
-    # ---- cinematic grade ----
-    im = ImageEnhance.Color(im).enhance(1.08)
-    im = ImageEnhance.Contrast(im).enhance(1.12)
-    im = ImageEnhance.Brightness(im).enhance(1.02)
-    # subtle vignette (edges) — mask=255 keeps scene, 0 -> dark. Draw full lines
-    # (not sparse points) so the mask isn't mostly black after blur.
-    w, h = im.size
-    cx, cy = w / 2, h / 2
-    max_d = math.hypot(cx, cy)
-    mask = Image.new("L", (w, h), 255)
-    md = ImageDraw.Draw(mask)
-    for y in range(0, h, 2):
-        dist = abs(y - cy) / max_d
-        v = int(max(0.0, 1.0 - dist * 0.42) * 255)
-        md.line([(0, y), (w, y)], fill=v)
-    mask = mask.filter(ImageFilter.GaussianBlur(60))
-    dark = Image.new("RGB", (w, h), (4, 5, 8))
-    im = Image.composite(im, dark, mask)
+    # ---- light cinematic grade (keep the scene bright/clean) ----
+    im = ImageEnhance.Color(im).enhance(1.06)
+    im = ImageEnhance.Contrast(im).enhance(1.08)
+    im = ImageEnhance.Brightness(im).enhance(1.04)
 
-    # ---- RIGHT-side caption scrim (keeps faces/subject clear) ----
-    # A soft dark gradient from the right edge only, so the caption column reads
-    # over any scene without covering characters' faces in the centre/left.
-    # composite(im, black, mask): mask=255 keeps scene, 0 -> black. The mask is
-    # 255 on the left fading to ~0 at the right edge => dark panel on the right.
-    scrim_w = int(w * 0.44)          # right 44% is the caption panel
-    scrim = Image.new("L", (w, h), 255)
-    sd = ImageDraw.Draw(scrim)
-    for x in range(w - scrim_w, w):
-        t = (x - (w - scrim_w)) / scrim_w
-        a = int(255 * (1.0 - (0.25 + 0.75 * t ** 1.25)))
-        sd.line([(x, 0), (x, h)], fill=a)
-    scrim = scrim.filter(ImageFilter.GaussianBlur(24))
-    black = Image.new("RGB", (w, h), (4, 5, 8))
-    im = Image.composite(im, black, scrim)
+    # ---- TOP CREAM BAND (the user's reorganized look): a warm cream panel across
+    # the TOP ~40% where the centered black hook sits; the scene shows below. ----
+    band_bottom = int(H * 0.42)
+    # mask: 255 = keep cream on top, 0 = keep scene below, soft blend at the seam.
+    band = Image.new("L", (W, H), 255)
+    bd = ImageDraw.Draw(band)
+    for y in range(0, H):
+        if y < band_bottom - 40:
+            a = 255
+        elif y < band_bottom + 40:
+            t = (y - (band_bottom - 40)) / 80
+            a = int(255 * (1.0 - t))
+        else:
+            a = 0
+        bd.line([(0, y), (W, y)], fill=a)
+    band = band.filter(ImageFilter.GaussianBlur(24))
+    cream = Image.new("RGB", (W, H), CREAM)
+    im = Image.composite(cream, im, band)
+
+    # subtle top-edge shadow line under the cream band for depth
+    d0 = ImageDraw.Draw(im)
+    d0.line([(0, band_bottom + 2), (W, band_bottom + 2)], fill=(0, 0, 0, 60))
 
     d = ImageDraw.Draw(im)
 
-    # ---- HOOK ----
+    # ---- HOOK: centered bold black text on the cream band ----
     hook = (hook or derive_hook(title)).upper()
-    hook = " ".join(hook.split()[:4])
+    hook = " ".join(hook.split()[:5])
     words = hook.split()
     accent = int(accent) if accent is not None else (len(words) - 1)
     accent = max(0, min(accent, len(words) - 1))
@@ -262,19 +257,19 @@ def make_thumbnail(src, title, out_jpg, at_sec=30, fontsize=96, hook=None, accen
     lines = lines[:2]
 
     font = load_font(fontsize)
-    line_h = int(fontsize * 1.02)
-    x_left = 48
-    y_start = int(H * 0.16)
-    # gold rule above the hook
-    d.rectangle([x_left, y_start - 34, x_left + int(fontsize * 0.66), y_start - 25], fill=GOLD)
-
-    # hook text: white + heavy black shadow/stroke
-    stroke_w = max(3, int(fontsize * 0.045))
+    line_h = int(fontsize * 1.05)
+    # center the whole hook block vertically in the cream band, horizontally centered
+    block_h = len(lines) * line_h
+    y_start = (band_bottom - block_h) // 2 + int(H * 0.02)
     for li, ln in enumerate(lines):
+        tw = d.textlength(ln, font=font)
+        x0 = (W - tw) // 2
         y = y_start + li * line_h
-        _draw_shadow_text(im, (x_left, y), ln, font, WHITE, (0, 0, 0), stroke_w=stroke_w)
+        # near-black text with a soft light shadow (reads on cream)
+        d.text((x0 + 3, y + 4), ln, font=font, fill=(0, 0, 0, 90))
+        d.text((x0, y), ln, font=font, fill=INK)
 
-    # accent word in RED (matched baseline/position)
+    # accent word in RED (centered block: recompute the accent word's x offset)
     pos = 0
     for li, ln in enumerate(lines):
         lw = ln.split()
@@ -283,46 +278,65 @@ def make_thumbnail(src, title, out_jpg, at_sec=30, fontsize=96, hook=None, accen
                 prefix = " ".join(lw[:j])
                 y = y_start + li * line_h
                 pre_w = d.textlength(prefix + " " if prefix else "", font=font)
-                _draw_shadow_text(im, (x_left + pre_w, y), wd, font, RED, (0, 0, 0), stroke_w=stroke_w)
+                tw = d.textlength(ln, font=font)
+                x0 = (W - tw) // 2
+                d.text((x0 + 3, y + 4), wd, font=font, fill=(0, 0, 0, 90))
+                d.text((x0 + pre_w, y), wd, font=font, fill=RED)
             pos += 1
 
-    # ---- CAPTION (what's being said — deaf-viewer legible) — RIGHT COLUMN ----
-    # Caption lives ONLY on the right side so it never covers the characters.
+    # ---- CAPTION (what's being said — deaf-viewer legible) at the BOTTOM ----
+    # A compact 1-2 line band at the very bottom over a subtle dark scrim so it
+    # reads on the scene without covering characters' faces (faces live mid-frame).
     cap_text = (caption or derive_caption(title)).strip()
     cap_font = load_font(cap_fontsize, CAPTION_FONT_CANDIDATES)
-    cap_col_x = int(W * 0.58)            # left edge of the caption column
-    cap_col_w = int(W * 0.90) - cap_col_x
-    cap_lines = _wrap_text(d, cap_text, cap_font, cap_col_w)[:3]
+    cap_w = int(W * 0.86)
+    cap_lines = _wrap_text(d, cap_text, cap_font, cap_w)[:2]
     line_gap = int(cap_fontsize * 1.2)
-    cap_y = int(H * 0.44)
+    block_h2 = len(cap_lines) * line_gap
+    cap_y = H - block_h2 - 26
+    # Soft scrim ONLY on the bottom strip. composite(im, black, mask): mask=255
+    # keeps im, 0 -> black. So the mask is 255 everywhere except a darkening
+    # band at the very bottom (0 = black there) — the rest of the scene is kept.
+    scrim = Image.new("L", (W, H), 255)
+    sd = ImageDraw.Draw(scrim)
+    scrim_top = cap_y - 22
+    for y in range(scrim_top, H):
+        t = (y - scrim_top) / max(1, (H - scrim_top))
+        a = int(255 * (1.0 - 0.9 * t))
+        sd.line([(0, y), (W, y)], fill=max(0, min(255, a)))
+    scrim = scrim.filter(ImageFilter.GaussianBlur(14))
+    black = Image.new("RGB", (W, H), (6, 8, 12))
+    im = Image.composite(im, black, scrim)
+    d = ImageDraw.Draw(im)
     for ci, cl in enumerate(cap_lines):
-        _draw_shadow_text(im, (cap_col_x, cap_y + ci * line_gap), cl, cap_font,
+        tw = d.textlength(cl, font=cap_font)
+        _draw_shadow_text(im, ((W - tw) // 2, cap_y + ci * line_gap), cl, cap_font,
                           WHITE, (0, 0, 0), stroke_w=max(2, int(cap_fontsize * 0.05)),
                           sh_dx=3, sh_dy=4)
 
-    # ---- TRUE STORY stamp (under hook, LEFT side) ----
+    # ---- TRUE STORY stamp (small, top-left under the cream seam) ----
     stamp_text = "TRUE STORY"
     try:
-        st_font = load_font(int(fontsize * 0.30))
+        st_font = load_font(int(fontsize * 0.26))
         tw = d.textlength(stamp_text, font=st_font)
-        bw = int(tw + fontsize * 0.36)
-        bh = int(fontsize * 0.48)
-        bx = x_left; by = y_start + len(lines) * line_h + 24
+        bw = int(tw + fontsize * 0.30)
+        bh = int(fontsize * 0.40)
+        bx = 28; by = H - bh - 22  # bottom-left, above the caption safe-zone
         od = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         oo = ImageDraw.Draw(od)
         oo.rounded_rectangle([bx, by, bx + bw, by + bh], radius=8,
                              outline=(255, 214, 0, 235), width=max(2, int(fontsize * 0.04)),
-                             fill=(0, 0, 0, 140))
+                             fill=(0, 0, 0, 130))
         im = Image.alpha_composite(im.convert("RGBA"), od).convert("RGB")
         d = ImageDraw.Draw(im)
-        d.text((bx + int(fontsize * 0.18), by + int(fontsize * 0.08)), stamp_text,
+        d.text((bx + int(fontsize * 0.14), by + int(fontsize * 0.06)), stamp_text,
                font=st_font, fill=(255, 214, 0), stroke_width=2, stroke_fill=(0, 0, 0))
     except Exception as e:
         print("[thumb] stamp skip:", e)
 
     # ---- SAFE ZONE: darken bottom-right ~210x95 (YouTube timestamp badge) ----
     safe_zone = im.crop((W - 210, H - 95, W, H))
-    dark_safe = Image.new("RGB", safe_zone.size, (8, 10, 14))
+    dark_safe = Image.new("RGB", safe_zone.size, (10, 12, 16))
     im.paste(dark_safe, (W - 210, H - 95))
 
     im.save(out_jpg, "JPEG", quality=92)
