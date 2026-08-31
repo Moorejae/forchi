@@ -243,6 +243,11 @@ async function runOnce({ runId, theme, dryRun = false, buildOnly = false, notify
 
   if (notify) { try { notify(`✅ V10 daily video posted (${rid})`); } catch {} }
   console.log(`[v10] pipeline complete -> ${mp4}`);
+  // USER DIRECTIVE (2026-08-31): delete the video + build artifacts once published
+  // (only when the upload stage actually ran — build-only keeps the mp4 for the publish phase).
+  if (out.stages.upload && out.stages.upload.status === "done" && !out.stages.upload.skip) {
+    cleanupRun(runDir, mp4);
+  }
   return out;
 }
 
@@ -329,11 +334,37 @@ async function publishRun(runId, { notify } = {}) {
   if (!fs.existsSync(mp4)) throw new Error("no built video for run " + runId);
   console.log("[v10] publishing pre-built run:", runId);
   const res = await uploadStage(runDir, mp4, thumb, runId);
+  // USER DIRECTIVE (2026-08-31): delete the video + run once it has been published.
+  cleanupRun(runDir, mp4);
   if (notify) { try { notify(`✅ V10 published: ${res.url}`); } catch {} }
   return res;
 }
 
-module.exports = { runOnce, publishRun, STAGES };
+// Delete a published run's video + build artifacts (mp4, images, voice wavs, run dir)
+// so we don't accumulate multi-GB files in temp_media after a video goes live.
+function cleanupRun(runDir, mp4) {
+  const fsr = require("fs");
+  const dirSize = (d) => {
+    let n = 0;
+    try { for (const f of fsr.readdirSync(d)) { const p = path.join(d, f); n += fsr.statSync(p).isDirectory() ? dirSize(p) : fsr.statSync(p).size; } } catch {}
+    return n;
+  };
+  let freed = 0;
+  const del = (p) => {
+    try {
+      if (fsr.existsSync(p)) {
+        freed += fsr.statSync(p).isDirectory() ? dirSize(p) : fsr.statSync(p).size;
+        fsr.rmSync(p, { recursive: true, force: true });
+        console.log("[v10] deleted", p);
+      }
+    } catch (e) { console.warn("[v10] cleanup failed:", p, e.message); }
+  };
+  del(mp4);
+  del(runDir);
+  if (freed) console.log(`[v10] cleanup done — freed ~${(freed / 1024 / 1024).toFixed(1)} MB`);
+}
+
+module.exports = { runOnce, publishRun, cleanupRun, STAGES };
 
 if (require.main === module) {
   const dry = process.argv.includes("--dry-run");
