@@ -173,7 +173,7 @@ async function callGemini(prompt) {
   if (!keys.length) throw new Error("no Gemini keys configured (GEMINI_KEYS / GEMINI_PAID_API_KEY)");
   let lastErr = "no keys tried";
   for (const key of keys) {
-    for (const m of tiers) {
+    nextModel: for (const m of tiers) {
       for (let a = 0; a < 2; a++) {
         try {
           const ctrl = new AbortController();
@@ -186,7 +186,14 @@ async function callGemini(prompt) {
           });
           clearTimeout(to);
           const t = await r.text();
-          if (!r.ok) { lastErr = `HTTP ${r.status}`; await new Promise((s) => setTimeout(s, 4000 * (a + 1))); continue; }
+          if (!r.ok) {
+            lastErr = `HTTP ${r.status}`;
+            await new Promise((s) => setTimeout(s, 4000 * (a + 1)));
+            // A 429-throttled key stays throttled across models — skip it to the
+            // next key instead of burning ~2.5 min on all model tiers.
+            if (r.status === 429) break nextModel;
+            continue;
+          }
           const j = JSON.parse(t);
           const txt = j.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
           const m2 = txt.match(/\{[\s\S]*\}/);
