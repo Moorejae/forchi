@@ -233,7 +233,24 @@ Rules:
     const raw = await callDeepSeek(system, user);
     plan = JSON.parse((raw.match(/\{[\s\S]*\}/) || [raw])[0]);
   } catch (e) {
+    // FALLBACK (user architecture): DeepSeek is the primary repair brain; when
+    // it's down/out of quota, Copilot (already in code-server) takes over. Write
+    // a handoff TODO file with the full context so the next agent session in
+    // VS Code can pick this up and fix it with Copilot.
     log(`[repair] DeepSeek/parse failed: ${e.message}`);
+    try {
+      fs.mkdirSync(WAKE_DIR, { recursive: true });
+      const todo = path.join(WAKE_DIR, `agent_todo_${Date.now()}.md`);
+      fs.writeFileSync(todo, `# 🤖 Repair needed — DeepSeek was unavailable, Copilot take over\n\n` +
+        `DeepSeek error: ${e.message}\n` +
+        `Time: ${new Date().toISOString()}\n\n` +
+        `## Problem source\n${problem}\n\n` +
+        `## Full diagnostics\n\`\`\`json\n${JSON.stringify(diag, null, 2).slice(0, 8000)}\n\`\`\`\n\n` +
+        `## Instructions\nDiagnose and fix using Copilot in this workspace (/opt/forchi). ` +
+        `Prefer minimal, safe changes. Restart the affected service, then verify with ` +
+        `\`FORCHI_BASE=/opt/forchi node src/watchdog/wakeTrigger.js check\`.\n`);
+      log(`[repair] Copilot handoff written: ${todo}`);
+    } catch (w) { log(`[repair] handoff write failed: ${w.message}`); }
     return 1;
   }
 
