@@ -167,18 +167,28 @@ function checkStuckV10() {
   return null;
 }
 
+// ms since a post timestamp that may be an ISO string OR a number (JS does NOT
+// auto-parse date strings in subtraction — `now() - "2026-..Z"` is NaN, which
+// silently disabled the freshness checks). Parse explicitly.
+function agoMs(v) {
+  const t = typeof v === "number" ? v : Date.parse(v || 0);
+  return Number.isFinite(t) ? now() - t : 0;
+}
+
 function checkLastPosts() {
   // If neither V10 nor shorts posted in ~30h, something is silently dead.
   const out = [];
   const v10Posts = readJson(path.join(BASE, "temp_media", "v10_posts.json"));
   if (Array.isArray(v10Posts) && v10Posts.length) {
     const last = v10Posts[v10Posts.length - 1];
-    if (now() - last.at > 30 * 3600 * 1000) out.push(`no V10 post in ${Math.round((now() - last.at) / 3600000)}h`);
+    const ago = agoMs(last && (last.at || last.time));
+    if (ago > 30 * 3600 * 1000) out.push(`no V10 post in ${Math.round(ago / 3600000)}h`);
   }
   const shPosts = readJson(path.join(BASE, "temp_media", "video_posts.json"));
   if (Array.isArray(shPosts) && shPosts.length) {
     const last = shPosts[shPosts.length - 1];
-    if (now() - last.at > 30 * 3600 * 1000) out.push(`no Short post in ${Math.round((now() - last.at) / 3600000)}h`);
+    const ago = agoMs(last && (last.at || last.time));
+    if (ago > 30 * 3600 * 1000) out.push(`no Short post in ${Math.round(ago / 3600000)}h`);
   }
   return out;
 }
