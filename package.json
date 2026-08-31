@@ -6,7 +6,11 @@
   "scripts": {
     "start": "node src/bot.js",
     "dev": "node --watch src/bot.js",
-    "test:router": "node tools/test_router.js"
+    "test:router": "node tools/test_router.js",
+    "repair": "node src/watchdog/repairAgent.js",
+    "repair:check": "node src/watchdog/repairAgent.js --diagnose",
+    "wake:check": "node src/watchdog/wakeTrigger.js check",
+    "wake:force": "node src/watchdog/wakeTrigger.js force"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

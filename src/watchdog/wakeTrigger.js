@@ -22,7 +22,7 @@
 const path = require("path");
 const fs = require("fs");
 
-const BASE = process.env.FORCHI_BASE || path.resolve(__dirname, "..", "..", "..");
+const BASE = process.env.FORCHI_BASE || path.resolve(__dirname, "..", "..");
 require("dotenv").config({ path: path.join(BASE, ".env") });
 
 const TICK_MS = 60 * 1000;
@@ -53,8 +53,20 @@ async function notify(text) {
 }
 
 // --- checks ---------------------------------------------------------------
+// USER DIRECTIVE (2026-08-31): "by VPS I don't just mean the VPS host — I mean
+// the ENTIRE workflow and pipeline ecosystem." So we monitor every service, the
+// remote HF spaces (images + voice), the V10 build/publish pipeline stages, the
+// shorts pipeline, the social (FB/LinkedIn) cadence, and the code-server.
 function servicesDown() {
-  const want = ["forchi.service", "v10-watchdog.service", "voice-worker.service", "v61-bot.service"];
+  const want = [
+    "forchi.service",
+    "v10-watchdog.service",
+    "voice-worker.service",
+    "v61-bot.service",
+    "forchi-wake.service",
+    "forchi-shorts.service",
+    "code-server.service",
+  ];
   const { spawnSync } = require("child_process");
   const down = [];
   const sysctl = fs.existsSync("/bin/systemctl") ? "/bin/systemctl" : "systemctl";
@@ -66,6 +78,69 @@ function servicesDown() {
     } catch (e) { down.push(s); }
   }
   return down;
+}
+
+// HF spaces health — the remote image-gen + voice backends. Uses the HF runtime
+// API (stage field), which is honest about sleep/error/paused states.
+async function checkHFSpaces() {
+  const spaces = [
+    { name: "slymun/forchi-img", label: "HF image gen" },
+    { name: "slymun/higgs-tts3", label: "HF higgs voice" },
+  ];
+  const out = [];
+  const BAD = new Set(["ERROR", "PAUSED", "DELETED", "APP_DELETED"]);
+  for (const sp of spaces) {
+    try {
+      const r = await fetch(`https://huggingface.co/api/spaces/${sp.name}/runtime`, { signal: AbortSignal.timeout(12000) });
+      if (!r.ok) { out.push(`${sp.label} (${sp.name}) runtime HTTP ${r.status}`); continue; }
+      const j = await r.json();
+      const stage = (j.stage || "").toUpperCase();
+      if (BAD.has(stage)) out.push(`${sp.label} (${sp.name}) stage=${stage}`);
+    } catch (e) { out.push(`${sp.label} (${sp.name}) unreachable: ${e.message.slice(0, 60)}`); }
+  }
+  return out;
+}
+
+// V10 pipeline stage failures — walk temp_media/v10_run/*/state.json and flag
+// any run whose stage list has a hard "failed" status.
+function checkV10Pipeline() {
+  const out = [];
+  const runsDir = path.join(BASE, "temp_media", "v10_run");
+  try {
+    if (!fs.existsSync(runsDir)) return out;
+    const dirs = fs.readdirSync(runsDir).filter((d) => fs.statSync(path.join(runsDir, d)).isDirectory());
+    for (const d of dirs) {
+      const st = readJson(path.join(runsDir, d, "state.json"));
+      if (!st || !st.stages) continue;
+      const failed = Object.entries(st.stages).filter(([, v]) => v && v.status === "failed").map(([k, v]) => `${k}:${(v.error || "").slice(0, 80)}`);
+      if (failed.length) out.push(`V10 run ${d} failed stages: ${failed.join(" | ")}`);
+    }
+  } catch {}
+  return out;
+}
+
+// Social (FB/LinkedIn) freshness — if auto-mode is on but nothing posted in 48h,
+// the social pipeline is silently dead. Best-effort via FB Graph API.
+async function checkSocialFreshness() {
+  const out = [];
+  const auto = readJson(path.join(BASE, "data", "auto_mode.json"));
+  if (auto && auto.enabled === false) return out; // auto-mode off = expected silence
+  const token = env("FACEBOOK_PAGE_ACCESS_TOKEN");
+  const page = env("FACEBOOK_PAGE_ID");
+  if (!token || !page) return out; // no FB creds -> can't judge
+  try {
+    const r = await fetch(
+      `https://graph.facebook.com/v19.0/${page}/posts?fields=created_time&limit=1&access_token=${encodeURIComponent(token)}`,
+      { signal: AbortSignal.timeout(15000) }
+    );
+    if (!r.ok) return out;
+    const j = await r.json();
+    const last = j.data && j.data[0] && Date.parse(j.data[0].created_time);
+    if (last && now() - last > 48 * 3600 * 1000) {
+      out.push(`no Facebook post in ${Math.round((now() - last) / 3600000)}h`);
+    }
+  } catch {}
+  return out;
 }
 
 function readJson(p) { try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch { return null; } }
@@ -109,7 +184,7 @@ function checkLastPosts() {
 }
 
 // --- run ------------------------------------------------------------------
-function runChecks() {
+async function runChecks() {
   const problems = [];
   const down = servicesDown();
   if (down.length) problems.push(`services DOWN: ${down.join(", ")}`);
@@ -118,6 +193,9 @@ function runChecks() {
   const stuck = checkStuckV10();
   if (stuck) problems.push(stuck);
   for (const p of checkLastPosts()) problems.push(p);
+  for (const p of checkV10Pipeline()) problems.push(p);
+  for (const p of await checkHFSpaces()) problems.push(p);
+  for (const p of await checkSocialFreshness()) problems.push(p);
   return problems;
 }
 
@@ -152,21 +230,41 @@ async function tick({ force = false } = {}) {
       `\n\nAgent: start a NEW session for this issue.`;
     const ok = await notify(msg);
     writeWakeFile(problems);
+    // USER DIRECTIVE (2026-08-31): auto-repair — DeepSeek repair agent fixes the
+    // issue using the code-server workspace. Fire-and-forget (detached) so the
+    // watchdog keeps ticking; the agent logs + Telegram-notifies its outcome.
+    spawnRepairAgent();
     state.lastAlert[key] = now();
     if (ok) state.sent[key] = now();
-    console.log("[wake] ALERT sent:", problems.join(" | "));
+    console.log("[wake] ALERT sent + repair agent spawned:", problems.join(" | "));
   } else {
     console.log("[wake] problems (cooldown, not re-alerting):", problems.join(" | "));
   }
   writeState(state);
 }
 
+// Launch the DeepSeek repair agent detached (no blocking, no shared event loop).
+function spawnRepairAgent() {
+  const { spawn } = require("child_process");
+  try {
+    const p = spawn(process.execPath, [path.join(__dirname, "repairAgent.js")], {
+      cwd: BASE, detached: true, stdio: "ignore",
+      env: { ...process.env, FORCHI_BASE: BASE },
+    });
+    p.unref();
+    console.log("[wake] repair agent spawned (pid", p.pid + ")");
+  } catch (e) {
+    console.warn("[wake] repair agent spawn failed:", e.message);
+  }
+}
+
 // --- CLI ------------------------------------------------------------------
 const cmd = (process.argv[2] || "").toLowerCase();
 if (cmd === "check") {
-  const problems = runChecks();
-  console.log(problems.length ? "PROBLEMS:\n" + problems.join("\n") : "ALL OK");
-  process.exit(problems.length ? 1 : 0);
+  runChecks().then((problems) => {
+    console.log(problems.length ? "PROBLEMS:\n" + problems.join("\n") : "ALL OK");
+    process.exit(problems.length ? 1 : 0);
+  }).catch((e) => { console.error(e); process.exit(1); });
 } else if (cmd === "force") {
   tick({ force: true }).then(() => process.exit(0)).catch((e) => { console.error(e); process.exit(1); });
 } else {

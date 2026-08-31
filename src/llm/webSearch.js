@@ -218,18 +218,24 @@ const PROVIDERS = [
 async function searchWeb(query, maxWaitMs = 8000) {
   const errors = [];
   for (const p of PROVIDERS) {
-    const k = p.key();
-    if (!k) { errors.push(`${p.name}: no key`); continue; }
-    try {
-      const text = await withTimeout(p.run(query, k), maxWaitMs, p.name);
-      if (text && text.trim()) {
-        console.log(`[WebSearch] ${p.name} returned results`);
-        return { provider: p.name, results: text };
+    const raw = p.key();
+    if (!raw) { errors.push(`${p.name}: no key`); continue; }
+    // Support comma-separated keys (rotation): try each in order, fall through on empty/failure.
+    const keys = String(raw).split(",").map((s) => s.trim()).filter(Boolean);
+    if (!keys.length) { errors.push(`${p.name}: no key`); continue; }
+    for (let ki = 0; ki < keys.length; ki++) {
+      try {
+        const text = await withTimeout(p.run(query, keys[ki]), maxWaitMs, p.name);
+        if (text && text.trim()) {
+          console.log(`[WebSearch] ${p.name} returned results${keys.length > 1 ? ` (key ${ki + 1}/${keys.length})` : ""}`);
+          return { provider: p.name, results: text };
+        }
+        errors.push(`${p.name}: empty (key ${ki + 1})`);
+        if (ki < keys.length - 1) console.warn(`[WebSearch] ${p.name} key ${ki + 1} empty -> next key`);
+      } catch (e) {
+        errors.push(`${p.name}: ${e.message}`);
+        console.warn(`[WebSearch] ${p.name} key ${ki + 1} failed: ${e.message} -> next key`);
       }
-      errors.push(`${p.name}: empty`);
-    } catch (e) {
-      errors.push(`${p.name}: ${e.message}`);
-      console.warn(`[WebSearch] ${p.name} failed: ${e.message}`);
     }
   }
   // DuckDuckGo — always available, no key needed.

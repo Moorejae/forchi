@@ -203,41 +203,6 @@ async function callHFFallback(prompt, isJson = false) {
   return null;
 }
 
-// ── DeepSeek (OpenAI-compatible API) — user-added fallback tier (2026-08-31) ──
-// Used when Gemini / self-hosted are exhausted. DeepSeek is cheap and reliable.
-// Config: DEEPSEEK_API_KEY (+ optional DEEPSEEK_MODEL, default deepseek-chat).
-async function callDeepSeek(prompt, isJson = false, maxTokens = 600) {
-  const key = (process.env.DEEPSEEK_API_KEY || "").trim();
-  if (!key) throw new Error("DEEPSEEK_API_KEY not set");
-  const model = (process.env.DEEPSEEK_MODEL || "deepseek-chat").trim();
-  const systemContent = isJson
-    ? "You are an expert AI parser. Output ONLY raw valid JSON — no markdown, no explanation."
-    : "You are ForChi, Victor's intelligent, direct, and friendly workflow agent. Speak authentically and directly.";
-  const res = await fetch("https://api.deepseek.com/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: systemContent },
-        { role: "user", content: prompt },
-      ],
-      max_tokens: maxTokens,
-      temperature: isJson ? 0.0 : 0.7,
-    }),
-    signal: AbortSignal.timeout(120000),
-  });
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`DeepSeek HTTP ${res.status}: ${errText.substring(0, 200)}`);
-  }
-  const data = await res.json();
-  const content = data.choices?.[0]?.message?.content;
-  if (!content) throw new Error("DeepSeek returned empty content");
-  console.log(`[Provider] ✅ DeepSeek (${model}) succeeded`);
-  return content.trim();
-}
-
 // ── Main generate() — full fallback chain ─────────────────────────────────────
 async function generate(prompt, responseJsonSchema = null) {
   const isJson = !!responseJsonSchema;
@@ -249,15 +214,7 @@ async function generate(prompt, responseJsonSchema = null) {
   let result = await callGemini(prompt, isJson, maxTokens);
   if (result) return cleanResponse(result, isJson);
 
-  // Tier 2: DeepSeek (OpenAI-compatible) — cheap reliable fallback
-  try {
-    result = await callDeepSeek(prompt, isJson, maxTokens);
-    if (result) return cleanResponse(result, isJson);
-  } catch (err) {
-    console.warn(`[Provider] DeepSeek failed: ${err.message}`);
-  }
-
-  // Tier 3: Self-hosted GGUF (Qwen2.5-7B via HF llama.cpp Space)
+  // Tier 2: Self-hosted GGUF (Qwen2.5-7B via HF llama.cpp Space)
   try {
     result = await callLLMServer(prompt, isJson);
     if (result) return cleanResponse(result, isJson);
@@ -265,7 +222,7 @@ async function generate(prompt, responseJsonSchema = null) {
     console.warn(`[Provider] Self-hosted LLM failed: ${err.message}`);
   }
 
-  // Tier 4: HF open-weight router (Gemma → Llama) — requires paid credits
+  // Tier 3: HF open-weight router (Gemma → Llama) — requires paid credits
   result = await callHFFallback(prompt, isJson);
   if (result) return cleanResponse(result, isJson);
 
