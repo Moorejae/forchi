@@ -55,13 +55,15 @@ async function notify(text) {
 // --- checks ---------------------------------------------------------------
 function servicesDown() {
   const want = ["forchi.service", "v10-watchdog.service", "voice-worker.service", "v61-bot.service"];
-  const { execFileSync } = require("child_process");
+  const { spawnSync } = require("child_process");
   const down = [];
+  const sysctl = fs.existsSync("/bin/systemctl") ? "/bin/systemctl" : "systemctl";
   for (const s of want) {
     try {
-      const r = execFileSync("systemctl", ["is-active", s], { encoding: "utf8", stdio: ["ignore", "ignore", "pipe"] }).trim();
-      if (r !== "active") down.push(s);
-    } catch { down.push(s); }
+      const r = spawnSync(sysctl, ["is-active", s], { encoding: "utf8", stdio: "pipe", timeout: 10000 });
+      const out = (r.stdout || "").toString().trim();
+      if (!out || out !== "active") down.push(s);
+    } catch (e) { down.push(s); }
   }
   return down;
 }
