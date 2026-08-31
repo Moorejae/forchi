@@ -61,6 +61,10 @@ const THEME_CATEGORIES = [
       "Tricksters, Taboos & the Wisdom of Villages",
       "Myths of Power, Justice & Consequences",
       "Modern Folklore in an Ancient World",
+      "Mythical Creatures & the Art of the Hunt",
+      "Legendary Beasts: How They Hunt, Hide & Haunt",
+      "Monsters of Myth & the Hunt to Survive Them",
+      "Creatures of Forest, Sea & Sky: Folklore's Hunters",
     ],
   },
   {

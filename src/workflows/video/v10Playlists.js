@@ -30,7 +30,7 @@ const DEFAULT_V10_PLAYLIST = "V10 Stories";
 // Summaries' generic terms ("human nature", "power") so a folklore legend or a
 // family/relationship story never gets misrouted just because it mentions one.
 const V10_CLASSIFIERS = [
-  { title: "World Folklore", keys: ["folklore", "folktale", "legend", "myth", "mytholog", "fable", "fairy", "folk", "tradition", "tribe", "village", "kingdom", "parable of", "folk story", "country", "ancient tale"] },
+  { title: "World Folklore", keys: ["folklore", "folktale", "legend", "myth", "mytholog", "fable", "fairy", "folk", "tradition", "tribe", "village", "kingdom", "parable of", "folk story", "country", "ancient tale", "creature", "beast", "monster", "dragon", "hunt", "hunter", "siren", "troll", "yeti", "cryptid"] },
   { title: "Church & Bible Stories", keys: ["church", "bible", "biblical", "scripture", "christ", "jesus", "gospel", "apostle", "prophet", "psalm", "parable", "exodus", "genesis", "revelation", "saint", "monk", "priest", "nun", "crusade", "missionary", "covenant", "faith"] },
   { title: "Family Stories", keys: ["family", "mother", "father", "sibling", "brother", "sister", "son ", "daughter", "parent", "grandmother", "grandfather", "grandparent", "household", "clan", "dynasty", "inheritance", "home"] },
   { title: "Love & Relationship Stories", keys: ["love", "romance", "romantic", "relationship", "dating", "courtship", "marry", "wedding", "bride", "groom", "lover", "heartbreak", "longing", "passion", "devotion"] },
