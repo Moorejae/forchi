@@ -211,7 +211,10 @@ async function runOnce({ runId, theme, dryRun = false, buildOnly = false, notify
           if (files.length < need) throw new Error(`images: only ${files.length}/${need} frames generated`);
           console.log(`[v10] images: ${files.length} frames present (${needShots} shots required)`);
         } else if (stage === "assemble") {
-          py(["tools/_v10_repl_assemble.py", "v10_" + rid, "--manifest", manifestPath, "--images", imagesDir, "--wavs", voiceDir, "--no-overlays", "--no-kenburns", "--to-downloads", "--sfx"]);
+          // --to-downloads is a Windows-dev convenience only (copies to ~/Downloads);
+          // on the VPS that dir may not exist, so skip it to avoid a post-write crash.
+          const dlArg = process.platform === "win32" ? ["--to-downloads"] : [];
+          py(["tools/_v10_repl_assemble.py", "v10_" + rid, "--manifest", manifestPath, "--images", imagesDir, "--wavs", voiceDir, "--no-overlays", "--no-kenburns", ...dlArg, "--sfx"]);
           if (!fs.existsSync(mp4) || fs.statSync(mp4).size < 500000) throw new Error("assemble output missing/too small");
         } else if (stage === "thumb") {
           const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));

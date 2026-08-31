@@ -509,10 +509,15 @@ def assemble(manifest_path, images_dir, wavs_dir, out_name, to_downloads=True, c
                     "-ar", "44100", "-ac", "2", mp3], capture_output=True)
     if to_downloads:
         dl = os.path.join(os.path.expanduser("~"), "Downloads")
-        shutil.copy2(out, os.path.join(dl, os.path.basename(out)))
-        if os.path.exists(mp3):
-            shutil.copy2(mp3, os.path.join(dl, os.path.basename(mp3)))
-        print(f"  [replasm] COPIED to {dl}")
+        try:
+            os.makedirs(dl, exist_ok=True)
+            shutil.copy2(out, os.path.join(dl, os.path.basename(out)))
+            if os.path.exists(mp3):
+                shutil.copy2(mp3, os.path.join(dl, os.path.basename(mp3)))
+            print(f"  [replasm] COPIED to {dl}")
+        except Exception as e:
+            # A convenience copy must NEVER fail the build (e.g. no ~/Downloads on the VPS).
+            print(f"  [replasm] Downloads copy skipped: {e}")
     return out
 
 if __name__ == "__main__":
