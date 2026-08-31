@@ -128,35 +128,42 @@ async function runOnce({ runId, theme, dryRun = false, buildOnly = false, notify
           const shotCount = (dManifest.scenes || []).reduce((a, s) => a + (s.shots || []).length, 0);
           console.log(`[v10] design: ${(dManifest.scenes || []).length} scenes, ${shotCount} shots`);
         } else if (stage === "voice") {
-          // PRIMARY (2026-08-29): Contabo CPU F5-TTS worker (off ZeroGPU).
-          // FALLBACK: Higgs (ZeroGPU) then edge-tts.
+          // PRIMARY (2026-08-31, user directive): Higgs TTS on Hugging Face
+          // (ZeroGPU) — GPU, much faster than the Contabo CPU F5-TTS worker.
+          // FALLBACK: Contabo CPU F5-TTS worker (off ZeroGPU).
+          // Set V10_VOICE_BACKEND=contabo to force Contabo-first (manual override).
           const limArgs = limit > 0 ? ["--limit", String(limit)] : [];
-          const voiceBackend = (process.env.V10_VOICE_BACKEND || "contabo").toLowerCase();
+          const voiceBackend = (process.env.V10_VOICE_BACKEND || "higgs").toLowerCase();
+          const onVps = process.platform !== "win32";
+          const contaboCmd = onVps
+            ? ["tools/_v10_local_voice.py", manifestPath, voiceDir]
+            : ["tools/_v10_contabo_voice.py", manifestPath, voiceDir];
+          const wavCount = (d) => (fs.existsSync(d) ? fs.readdirSync(d).filter((f) => /^r\d\d\.wav$/.test(f) && fs.statSync(path.join(d, f)).size > 0).length : 0);
+          const needScenes = JSON.parse(fs.readFileSync(manifestPath, "utf8")).scenes.length;
           if (voiceBackend === "contabo") {
+            // Forced Contabo-first (manual override); Higgs as fallback.
             try {
-              // On the VPS (linux) use the LOCAL worker directly (no SSH, no Windows
-              // path bug). On Windows, SSH to the Contabo worker as before.
-              const onVps = process.platform !== "win32";
-              py(onVps
-                ? ["tools/_v10_local_voice.py", manifestPath, voiceDir]
-                : ["tools/_v10_contabo_voice.py", manifestPath, voiceDir]);
-              const wavs = fs.existsSync(voiceDir) ? fs.readdirSync(voiceDir).filter((f) => /^r\d\d\.wav$/.test(f) && fs.statSync(path.join(voiceDir, f)).size > 0) : [];
-              const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-              const needScenes = manifest.scenes.length;
-              if (wavs.length >= needScenes) {
-                console.log(`[v10] voice: Contabo rendered ${wavs.length} scenes`);
-                py(["tools/_v10_tighten_voice.py", "--dir", voiceDir]);
-              } else {
-                throw new Error(`Contabo gave ${wavs.length}/${needScenes} wavs`);
-              }
+              py(contaboCmd);
+              if (wavCount(voiceDir) < needScenes) throw new Error(`Contabo gave ${wavCount(voiceDir)}/${needScenes} wavs`);
+              console.log(`[v10] voice: Contabo rendered ${wavCount(voiceDir)} scenes`);
+              py(["tools/_v10_tighten_voice.py", "--dir", voiceDir]);
             } catch (e) {
               console.warn(`[v10] voice: Contabo failed (${e.message}) — falling back to Higgs`);
               py(["tools/_v10_repl_voice.py", "--clone", "--manifest", manifestPath, "--out", voiceDir, ...limArgs]);
               py(["tools/_v10_tighten_voice.py", "--dir", voiceDir]);
             }
           } else {
-            py(["tools/_v10_repl_voice.py", "--clone", "--manifest", manifestPath, "--out", voiceDir, ...limArgs]);
-            py(["tools/_v10_tighten_voice.py", "--dir", voiceDir]);
+            // HIGGS-FIRST (default): HF ZeroGPU, fast; fall back to Contabo CPU.
+            try {
+              py(["tools/_v10_repl_voice.py", "--clone", "--manifest", manifestPath, "--out", voiceDir, ...limArgs]);
+              if (wavCount(voiceDir) < needScenes) throw new Error(`Higgs gave ${wavCount(voiceDir)}/${needScenes} wavs`);
+              console.log(`[v10] voice: Higgs rendered ${wavCount(voiceDir)} scenes`);
+              py(["tools/_v10_tighten_voice.py", "--dir", voiceDir]);
+            } catch (e) {
+              console.warn(`[v10] voice: Higgs failed (${e.message}) — falling back to Contabo CPU`);
+              py(contaboCmd);
+              py(["tools/_v10_tighten_voice.py", "--dir", voiceDir]);
+            }
           }
         } else if (stage === "images") {
           // PRIMARY (2026-08-29): Google Vertex AI gemini-2.5-flash-image via
