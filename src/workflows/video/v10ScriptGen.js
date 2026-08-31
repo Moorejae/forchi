@@ -239,6 +239,12 @@ Then split the script into ${N_SCENES} SCENES (about ${N_SCENES - 2} to ${N_SCEN
 - "action": ONE clear action/pose the scene shows (what is happening)
 - "frames": 4 MICRO-FRAME image-prompt variations of THIS SAME SCENE (SAME background, SAME camera angle, SAME framing — the FRAME is FIXED, pixel-identical background across all frames). This is CONCEPTUAL ILLUSTRATION: only the objects/characters INSIDE the frame change — they may MOVE, APPEAR, or DISAPPEAR as the narration describes (a ball is removed, a second person steps away, a flag appears, an object pops into the scene). e.g. frame 1 = base pose, frame 2 = a character moves / hand raises / eyebrow furrows, frame 3 = an object pops in or a prop changes state (a door cracks open, a candle gutters), frame 4 = an object disappears or a small expression shift / climactic detail (light spills in, a document is revealed). The camera NEVER moves and the composition NEVER changes between frames — the background must remain pixel-identical across all 4 frames; only the characters/props inside the fixed frame mutate.
 
+TITLE SPEC (CRITICAL — the channel's click psychology, 2026-08-31): Humans are curious creatures; long-form channels win by opening a LOOP in the title that the video closes. The "title" MUST be a CURIOSITY-GAP hook, ideally a WHY-question:
+  - "Why the Most Loyal Man in History Was Erased"
+  - "Why We Fear the Truth More Than Death"
+  - "Why the Winner of That War Was Never Celebrated"
+Rules: (1) START with a curiosity word — preferably "Why", else "How", "What Nobody Tells You", "The Real Reason", "The Surprising Reason"; (2) be SPECIFIC to THIS story (name the person / place / event / object); (3) open an INFORMATION GAP — it promises a mechanism, reason, or answer the viewer must watch to get; (4) NO clickbait lies — the story genuinely delivers the promise; (5) 6-12 words, no quotes, no punctuation games. This title is ALSO used on the thumbnail, so keep it punchy.
+
 Return STRICT JSON ONLY:
 {"title":"...","topic":"...","theme":"...","script":"<full script text>","chapters":[{"label":"...","act":1}],"scenes":[{"n":1,"label":"...","narration":"...","setting":"...","characters":"...","action":"...","frames":["frame1 img prompt","frame2 img prompt","frame3 img prompt"]}]}`;
 }

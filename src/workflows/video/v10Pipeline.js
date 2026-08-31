@@ -208,7 +208,10 @@ async function runOnce({ runId, theme, dryRun = false, buildOnly = false, notify
           if (!fs.existsSync(mp4) || fs.statSync(mp4).size < 500000) throw new Error("assemble output missing/too small");
         } else if (stage === "thumb") {
           const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
-          py(["tools/_v10_thumbnail.py", mp4, "--title", (meta.title || "").slice(0, 60), "--out", thumb, "--at", "30"]);
+          // USER DIRECTIVE (2026-08-31): thumbnail carries the same curiosity-gap
+          // "WHY" hook as the title — makes people want to click.
+          const hookTitle = v10.buildV10CuriosityTitle(meta.title, meta);
+          py(["tools/_v10_thumbnail.py", mp4, "--title", hookTitle.slice(0, 60), "--out", thumb, "--at", "30"]);
         } else if (stage === "upload") {
           if (dryRun || buildOnly) {
             console.log(`[v10] ${dryRun ? "dry-run" : "build-only"}: skipping upload`);
@@ -264,7 +267,7 @@ async function uploadStage(runDir, mp4, thumb, rid) {
   }
   const chapters = v10.buildChapters(timeline);
 
-  const baseTitle = meta.title || "ForChi Story";
+  const baseTitle = v10.buildV10CuriosityTitle(meta.title, meta); // "WHY" curiosity-gap hook
   const title = v10.buildV10Title(baseTitle);
   const description = v10.buildV10Description({ baseTitle, chapters, script: meta.script, seed: Date.now() % 100000 });
 
