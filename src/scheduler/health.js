@@ -16,7 +16,7 @@
 // this module makes ForChi able to SEE and REPAIR the workflow state live.
 
 const autoMode = require("./autoMode");
-const socialScheduler = require("./jobs"); // the 5x/day social scheduler
+const socialScheduler = require("./jobs"); // the 2x/day social scheduler (FB + LI)
 const jobsMode = require("../workflows/jobs/jobsMode");
 const jobsScheduler = require("../workflows/jobs/scheduler");
 const jobsDb = require("../workflows/jobs/db");

@@ -121,15 +121,18 @@ def build():
     story.append(Paragraph("Updated Master Blueprint & Build Summary", title_style))
     story.append(HRFlowable(width="100%", thickness=3, color=SECONDARY, spaceAfter=22))
     story.append(Paragraph("<b>Author:</b> Pair-programmed with Victor (Chiedozie Victor Agu)", meta_style))
-    story.append(Paragraph("<b>System:</b> ForChi — Free 24/7 Telegram Social Media Automation Bot", meta_style))
-    story.append(Paragraph("<b>Date:</b> August 19, 2026", meta_style))
-    story.append(Paragraph("<b>Status:</b> LIVE & VERIFIED — all core services healthy", meta_style))
+    story.append(Paragraph("<b>System:</b> ForChi — Free 24/7 Telegram Social / Video / Jobs Automation Agent", meta_style))
+    story.append(Paragraph("<b>Date:</b> September 1, 2026", meta_style))
+    story.append(Paragraph("<b>Status:</b> LIVE & VERIFIED — social, video & jobs workflows healthy", meta_style))
     story.append(Spacer(1, 30))
     box = Table([[Paragraph(
-        "<b>SUMMARY:</b> ForChi is a fully free, always-on bot that posts 5x/day to Facebook & LinkedIn with "
-        "FLUX-quality styled images, handles chat & voice notes, and is controllable from Telegram. "
-        "Built on Render + Hugging Face Spaces + Gemini free tier. This document is the definitive build blueprint "
-        "and lessons-learned manifest.", body)]], colWidths=[504])
+        "<b>SUMMARY:</b> ForChi is a fully free, always-on agent that posts 2x/day to Facebook and 2x/day to LinkedIn with "
+        "FLUX-quality styled images, handles chat & voice notes, runs a full long-form YouTube automation pipeline "
+        "(channel @sirxlud — AI scripts, cloned voice, AI images, burned-in subtitles, 2 videos/day), and runs an "
+        "autonomous job-application workflow (strict intern/junior targeting in cloud security, DevOps/SRE, AI "
+        "integration, workflow automation & API integration; tailored resumes + proof-based cover letters; auto-apply "
+        "to ATS portals). Built on Render/Contabo + Hugging Face Spaces + Gemini free tier. This document is the "
+        "definitive build blueprint and lessons-learned manifest.", body)]], colWidths=[504])
     box.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), BG_LIGHT), ("BOX", (0, 0), (-1, -1), 1.5, SECONDARY), ("PADDING", (0, 0), (-1, -1), 12)]))
     story.append(box)
     story.append(PageBreak())

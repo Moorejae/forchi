@@ -2,7 +2,7 @@
 
 > **Status:** ✅ **BUILT & LIVE** (v3, 2026-08-18) — running on **constant auto** on Render.
 > **ForChi now runs TWO active workflows (both autonomous):**
-> 1. **Social workflow** — Fickle youth Facebook posts + LinkedIn deep-dives, 5×/day, plus the daily 8pm WAT report.
+> 1. **Social workflow** — Fickle youth Facebook posts (2×/day) + LinkedIn job-seeking/project-showcase posts (2×/day), plus the daily 8pm WAT report.
 > 2. **Jobs workflow (this doc)** — discovers jobs matching the user's real profile, scores them, and **auto-applies** to trusted ATS portals with **human-sounding** cover letters and screening answers — so the user gets a Telegram digest of applications every day at **20:00 WAT** instead of doing it all manually.
 > **Non-goals (v1):** LinkedIn Easy Apply automation, Upwork/Freelancer auto-bidding, fabricated credentials.
 
@@ -26,7 +26,7 @@
         │                                                         │
         │  Social workflow  (ACTIVE)        Jobs workflow (ACTIVE) │
         │  - autoMode scheduler             - jobs scheduler       │
-        │  - FB / LI posts (5x/day)         - Telegram /jobs cmds  │
+        │  - FB / LI posts (2x/day each)    - Telegram /jobs cmds  │
         │  - daily report 20:00 WAT         - daily report 20:00 WAT│
         └─────────────────────────────────────────────────────────┘
                           │  reuse

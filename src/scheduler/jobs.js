@@ -4,8 +4,19 @@ const { generateFacebookPost, generateLinkedInPost } = require("../llm/contentGe
 const autoMode = require("./autoMode");
 const wlock = require("./workflowLock.js");
 
-// Auto mode: 2 posts/day (08:00, 16:00 UTC) — reduced from 5/day per user directive.
+// Auto mode: FACEBOOK 2 posts/day (08:00, 16:00 UTC).
 const AUTO_SCHEDULE = "0 8,16 * * *";
+// LINKEDIN — USER DIRECTIVE (2026-09-02): 2 posts per DAY (08:00 + 16:00 UTC).
+// Slot 08:00 = job-seeking post addressed to hiring managers + people who know
+// hiring managers (what Victor does / wants / the company / who to connect him to
+// / how to help). Slot 16:00 = build-in-public project showcase (real builds +
+// failures). See LI_JOB_TOPICS + LI_PROJECT_TOPICS and the LinkedIn generators.
+function linkedinSlot(now = new Date()) {
+  const h = now.getUTCHours();
+  if (h === 8) return "job";
+  if (h === 16) return "project";
+  return null;
+}
 
 // Rotating themes so posts stay fresh day to day.
 const FB_THEMES = [
@@ -23,51 +34,37 @@ const FB_THEMES = [
   "resilience: standing tall in the middle of the storm, not waiting for it to pass",
 ];
 
-const LI_TOPICS = [
-  // AI / LLM
-  "the difference between AI models and true LLM reasoning",
-  "how large language models actually work under the hood",
-  // AI integrations
-  "integrating LLMs into production systems without breaking anything",
-  "practical AI integrations that save engineering teams real time",
-  // Best practices
-  "AI engineering best practices for production systems",
-  "prompt engineering vs system design: what actually moves the needle",
-  "LLM evaluation: how to know if your model is actually good",
-  // Cloud engineering
-  "cloud architecture patterns built specifically for AI workloads",
-  "serverless AI: when it makes sense and when it doesn't",
-  "cloud cost optimization for AI and LLM workloads",
-  // AI news
-  "the latest AI news and what it means for engineers this week",
-  "a major AI release right now and its real-world impact",
-  // Nature + AI
-  "what AI can learn from nature: evolution, swarm intelligence, and neural inspiration",
-  "how biology inspired modern neural networks and what's next",
-  "nature as the original neural network: lessons for AI design",
-  // Dangers of AI in the wrong hands
-  "the real dangers of AI in the wrong hands and how to guard against them",
-  "AI safety, alignment, and why responsible engineering matters now",
-  // Networking
-  "how networking and distributed systems power modern AI",
-  "network architecture for training and serving large models at scale",
-  // Training models
-  "how large language models are trained: the full pipeline explained",
-  "fine-tuning vs RAG: which one do you actually need",
-  "data pipelines for AI: garbage in, garbage out",
-  // Building with AI agents (series)
-  "AI agents series: building your first AI agent — a beginner's roadmap",
-  "AI agents series: orchestrating multi-agent workflows that actually work",
-  "AI agents series: giving agents tools, memory, and boundaries",
-  "AI agents series: when agents fail and how to recover gracefully",
-  "AI agents series: turning a one-off agent into a reusable product",
-  // Cloud + AI engineering
-  "MLOps: taking a model from notebook to production",
-  "scaling AI systems: latency, throughput, and reliability",
-  "vector databases and embeddings, explained simply",
-  "RAG architectures: retrieval strategies that actually improve answers",
-  "AI ethics in engineering: building with responsibility",
-  "career advice for AI and cloud engineers in 2026",
+// LinkedIn topics — USER DIRECTIVE (2026-09-02): LinkedIn now runs 2/day (08:00 +
+// 16:00 UTC). The 08:00 slot is a JOB-SEEKING post addressed to hiring managers +
+// people who know them; the 16:00 slot is a PROJECT-SHOWCASE post (real builds +
+// failures, never AI news). Each topic names a real angle; the LinkedIn generator
+// expands it from the real facts in its prompt (no invented metrics/numbers).
+const LI_JOB_TOPICS = [
+  "I build production AI and cloud systems — and I'm looking for a remote junior role where I can keep learning",
+  "Hiring managers and people who know them: here's what I do, what I want, and the company I'm looking for",
+  "Open to work: remote cloud security, DevOps, and AI integration roles — here's how you can help me get there",
+  "From a 24/7 agent and a crypto wallet to job hunting: my honest ask to recruiters and hiring managers",
+  "What I want in my next team — and the type of company I'm aiming for",
+  "A short intro to who I am, what I build, and who you should connect me to",
+  "Why I want to join a team with stronger engineers than me — and how to reach me",
+];
+
+const LI_PROJECT_TOPICS = [
+  "How I built ForChi, a 24/7 Telegram agent that runs social posting, a YouTube pipeline, and job applications by itself",
+  "Behind the build: CloudVoid — a non-custodial multi-chain crypto wallet with real on-chain send and swap",
+  "How I automated a YouTube channel end-to-end: AI scripts, cloned voice, AI images, 2 videos a day",
+  "What it took to build Odonata, a blind-validated sports prediction engine — and the six approaches I threw away first",
+  "How ForChi applies to jobs by itself: discovering roles, tailoring resumes, and auto-applying to ATS portals",
+  "The $0 infrastructure behind a production AI agent: Contabo VPS, Hugging Face Spaces, and the Gemini free tier",
+  "Case study: encrypting service-to-service traffic with P-256 ECDH + AES-256-GCM in CloudVoid",
+  "How I migrated all production services to a self-managed VPS with systemd, a health watchdog, and self-healing deploys",
+  "Building with the YouTube Data API v3: uploads, captions, thumbnails, and playlist automation",
+  "Keeping a consistent cloned voice across a daily video pipeline with Higgs Audio v3 TTS",
+  "Project CLAY: why I built a 21-container multi-agent system, and why I retired it",
+  "From Milo, my first chat bot, to CLAY and ForChi: the architecture lessons between three bots",
+  "Protecting credentials in production: .gitignore, .env, and the secrets hygiene I follow on every project",
+  "How agentic coding tools changed my Linux workflow — from doing everything manually to shipping faster",
+  "What I'm building next: a crypto trading bot and an ecommerce store — and how AI + MCP servers fit in",
 ];
 
 function pick(arr, seed) {
@@ -116,7 +113,7 @@ function initScheduler() {
     console.log("[Scheduler] Auto mode already registered — skipping duplicate.");
     return;
   }
-console.log(`[Scheduler] Initializing AUTO mode (2 posts/day, 8:00+16:00 UTC)... (currently ${autoMode.isEnabled() ? "ON ✅" : "OFF ⛔"})`);
+console.log(`[Scheduler] Initializing AUTO mode (FB 2/day 8:00+16:00 UTC · LI 2/day: 8:00 job-seeking + 16:00 project showcase)... (currently ${autoMode.isEnabled() ? "ON ✅" : "OFF ⛔"})`);
 
   cronTask = cron.schedule(
     AUTO_SCHEDULE,
@@ -140,27 +137,34 @@ console.log(`[Scheduler] Initializing AUTO mode (2 posts/day, 8:00+16:00 UTC)...
         // Rotate themes by current day + hour so each run differs and changes daily
         // across the (now much larger) pools — never the same sequence two days in a row.
         // Fresh topic per platform (persisted, no day-to-day repeats).
+        // LinkedIn posts at BOTH slots: 08:00 = job-seeking, 16:00 = project showcase.
         const fbTheme = pickFresh(FB_THEMES, "fb");
-        const liTopic = pickFresh(LI_TOPICS, "li");
+        const liSlot = linkedinSlot();
+        const liTopic = liSlot
+          ? pickFresh(liSlot === "job" ? LI_JOB_TOPICS : LI_PROJECT_TOPICS, liSlot === "job" ? "li_job" : "li_project")
+          : null;
 
-        console.log(`[Auto] ${new Date().toISOString()} — generating posts (FB: "${fbTheme}" | LI: "${liTopic}")`);
+        console.log(`[Auto] ${new Date().toISOString()} — generating posts (FB: "${fbTheme}" | LI: ${liSlot ? `"${liTopic}" (${liSlot === "job" ? "job-seeking" : "project showcase"})` : "SKIPPED"})`);
 
-        // 1. Generate content in the two styles in parallel.
+        // 1. Generate content in the two styles in parallel (LinkedIn only at its 2 slots).
         const [fb, li] = await Promise.allSettled([
           generateFacebookPost(fbTheme),
-          generateLinkedInPost(liTopic),
+          liSlot ? generateLinkedInPost(liTopic, liSlot) : Promise.resolve({ postText: "", visualTopic: "" }),
         ]);
 
         // 2. Post each to its own platform (each generates its own styled image).
         const fbContent = fb.status === "fulfilled" ? fb.value : { postText: fbTheme, visualTopic: fbTheme };
-        const liContent = li.status === "fulfilled" ? li.value : { postText: liTopic, visualTopic: liTopic };
+        const liContent = liSlot && li.status === "fulfilled" ? li.value : { postText: "", visualTopic: "" };
 
-        const results = await Promise.allSettled([
+        const jobs = [
           socialWorkflow.run({ destinations: ["facebook"], content: fbContent.postText, visualTopic: fbContent.visualTopic }),
-          socialWorkflow.run({ destinations: ["linkedin"], content: liContent.postText, visualTopic: liContent.visualTopic }),
-        ]);
+        ];
+        if (liSlot && liContent.postText) {
+          jobs.push(socialWorkflow.run({ destinations: ["linkedin"], content: liContent.postText, visualTopic: liContent.visualTopic }));
+        }
+        const results = await Promise.allSettled(jobs);
 
-        const perPlatform = { facebook: "err", linkedin: "err", fbError: null, liError: null };
+        const perPlatform = { facebook: "err", linkedin: liSlot ? "err" : "skip", fbError: null, liError: null };
         results.forEach((r, i) => {
           const platform = i === 0 ? "facebook" : "linkedin";
           if (r.status === "fulfilled" && r.value.success) {

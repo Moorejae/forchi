@@ -89,7 +89,7 @@ bot.start((ctx) => {
   jobsNotify.setChatId(ctx.chat && ctx.chat.id);
   return ctx.reply(
     "Hey Victor — I'm ForChi, your personal workflow agent.\n\n" +
-    "I post to Facebook & LinkedIn (5x/day), answer voice notes, search the web, run ForChi Jobs, and manage the YouTube Shorts channel (@sirxlud) — writing, voicing and posting Victor Moore poetry with AI instrumentals.\n\n" +
+    "I post to Facebook (2x/day) and LinkedIn (2x/day — 08:00 job-seeking posts for hiring managers + 16:00 project showcase posts), answer voice notes, search the web, run ForChi Jobs, and manage the YouTube Shorts + long-form channels (@sirxlud) — writing, voicing and posting Victor Moore poetry with AI instrumentals.\n\n" +
     "Try: /jobs · \"show me the jobs report\" · \"video status\" · \"turn on the video workflow\" · \"post a video now\" · or just talk to me."
   );
 });
@@ -516,7 +516,7 @@ const server = http.createServer((req, res) => {
       jobsMode: jobsMode.isEnabled() ? "on" : "off",
       jobsApply: (process.env.JOBS_AUTO_APPLY || "false") === "true" ? "live" : "dry-run",
       utc: new Date().toISOString(),
-      schedule: "0 0,8,12,16,20 * * * UTC",
+      schedule: "0 8,16 * * * UTC",
     }));
   } else {
     res.end(JSON.stringify({ status: "healthy", bot: "ForChi", mode: "long-polling" }));

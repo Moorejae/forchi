@@ -42,22 +42,77 @@ const SECTION_TITLES = [
 ];
 
 function cleanLine(text) {
-  return String(text).replace(/https?:\/\//g, "").replace(/\s+/g, " ").trim();
+  return String(text)
+    .replace(/https?:\/\//g, "")
+    // Strip markdown bold/italic markers the LLM sometimes emits (`**text**`),
+    // so a bolded summary is rendered as PLAIN text (never as a heading).
+    .replace(/\*\*/g, "")
+    .replace(/__/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
+// A line is a SECTION HEADING only if its WHOLE cleaned text is EXACTLY one of
+// the known section titles (normalized: lowercase, non-alphanumerics -> space).
+// NOTE (USER DIRECTIVE 2026-09-01): this used to also match any line CONTAINING
+// a title word ("experience", "skills", "summary"...) and any ALL-CAPS line —
+// which made the professional summary (or any bullet mentioning "experience")
+// render in BOLD. Exact-match only: body text can never be bolded by accident.
 function isSectionHeading(line) {
-  const t = cleanLine(line).toLowerCase().replace(/[^a-z& ]/g, " ").trim();
-  return SECTION_TITLES.some((s) => t === s || t.includes(s)) ||
-    /^[A-Z][A-Z0-9 &/()\-]{2,45}$/.test(cleanLine(line));
+  const t = cleanLine(line).toLowerCase().replace(/[^a-z0-9& ]/g, " ").replace(/\s+/g, " ").trim();
+  return SECTION_TITLES.some((s) => t === s);
 }
 
-function isProjectHeader(line) {
+// AI/ATS-safe ASCII (USER DIRECTIVE 2026-09-01): most hiring pipelines use AI as
+// the FIRST filter, and many parsers choke on decorative characters AND on
+// vector-drawn lines in the PDF. This strips diacritics (é -> e) and replaces
+// typographic characters (em/en dashes, curly quotes, middots, bullets) with
+// plain ASCII so the extracted text is always clean and parseable.
+function asciiSafe(t) {
+  return String(t || "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")   // strip combining diacritics
+    .replace(/[—–]/g, "-")              // em/en dash -> hyphen
+    .replace(/[“”]/g, '"').replace(/[‘’]/g, "'")
+    .replace(/[·•]/g, "-")              // middot / bullet -> hyphen
+    .replace(/…/g, "...")
+    .replace(/[^\x20-\x7E]/g, "")       // drop any remaining non-ASCII
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+// A short date-range line: "2026 – Present", "2024 - 2026", "May 2026 – Present".
+function isDateRange(line) {
   const t = cleanLine(line);
-  if (t.length > 90) return false;
-  return /\b(19|20)\d{2}\b/.test(t) || /\|/.test(t) || /\(Live\)/i.test(t) || /[–—]/.test(t);
+  if (!t || t.length > 40) return false;
+  return /\b(19|20)\d{2}\s*(?:to|[–—~/-])\s*(?:(?:19|20)\d{2}|Present)\b/i.test(t);
 }
 
-function getResumeBuffer(tailoredText) {
+// A line is a PROJECT/EXPERIENCE header (bold) ONLY when it is one of:
+//  - a pipe-delimited role line ("ROLE | COMPANY | REMOTE" / "ROLE | YEARS | URL"),
+//  - a short date-range line ("2026 – Present"),
+//  - an explicit "(Live)" marker,
+//  - a short PROJECT NAME line whose NEXT line is a pipe-delimited role line.
+// NOTE (USER DIRECTIVE 2026-09-02): a lone em/en dash or a year mention inside
+// prose is NOT a header — the old check (any dash or any "20xx") was bolding the
+// professional summary body in some resumes. Summary body text is never bold.
+function isProjectHeader(line, nextLine) {
+  const t = cleanLine(line);
+  if (!t || t.length > 90) return false;
+  // Body bullet lines ("- ...", "• ...") are never headers — without this guard,
+  // the lookahead below would bold the last bullet before the next entry's
+  // pipe-delimited role line.
+  if (/^[-•*]/.test(t)) return false;
+  if (/\|/.test(t) || /\(Live\)/i.test(t) || isDateRange(t)) return true;
+  const n = cleanLine(nextLine || "");
+  return n.length > 0 && n.length <= 90 && /\|/.test(n);
+}
+
+function getResumeBuffer(tailoredText, opts = {}) {
+  // maxPages: 1 = the strict one-page rule for per-job tailored resumes (HR
+  // never wants a 2-page resume). The BASE resume may use maxPages: 2 so the
+  // full real work history fits legibly without shrinking to unreadable fonts.
+  const maxPages = Number(opts.maxPages || 1);
   try {
     const PDFDocument = require("pdfkit");
     if (tailoredText && tailoredText.length > 100) {
@@ -90,45 +145,45 @@ function getResumeBuffer(tailoredText) {
         const contact = lines[2] || "";
         const bodyLines = lines.slice(3);
 
-        doc.font("Carlito-Bold").fontSize(18 * S).fillColor(ACCENT).text(name.toUpperCase());
-        if (title) doc.moveDown(0.2 * S).font("Carlito-Regular").fontSize(11.5 * S).fillColor(DARK).text(title);
-        if (contact) doc.moveDown(0.2 * S).font("Carlito-Regular").fontSize(8.5 * S).fillColor(GRAY).text(contact);
-        doc.moveDown(0.5 * S);
-        doc.moveTo(margin, doc.y).lineTo(margin + width, doc.y).lineWidth(1.3).strokeColor(ACCENT).stroke();
+        doc.font("Carlito-Bold").fontSize(18 * S).fillColor(ACCENT).text(asciiSafe(name).toUpperCase());
+        if (title) doc.moveDown(0.2 * S).font("Carlito-Regular").fontSize(11.5 * S).fillColor(DARK).text(asciiSafe(title));
+        if (contact) doc.moveDown(0.2 * S).font("Carlito-Regular").fontSize(8.5 * S).fillColor(GRAY).text(asciiSafe(contact));
         doc.moveDown(1 * S);
 
         // ── Sections ──
-        for (const line of bodyLines) {
+        // NOTE (USER DIRECTIVE 2026-09-01): NO vector-drawn divider lines and NO
+        // special characters — AI/ATS first-pass parsers read the resume cleanly
+        // when it's plain text + ASCII (decorative lines/characters break them).
+        for (let i = 0; i < bodyLines.length; i++) {
+          const line = bodyLines[i];
           if (isSectionHeading(line)) {
             doc.moveDown(0.7 * S);
-            doc.font("Carlito-Bold").fontSize(10.5 * S).fillColor(ACCENT).text(line.toUpperCase());
-            doc.moveDown(0.1 * S);
-            doc.moveTo(margin, doc.y).lineTo(margin + width, doc.y).lineWidth(0.6).strokeColor(ACCENT).opacity(0.6).stroke().opacity(1);
-            doc.moveDown(0.55 * S);
+            doc.font("Carlito-Bold").fontSize(10.5 * S).fillColor(ACCENT).text(asciiSafe(line).toUpperCase());
+            doc.moveDown(0.35 * S);
             continue;
           }
-          if (isProjectHeader(line)) {
+          if (isProjectHeader(line, bodyLines[i + 1])) {
             doc.moveDown(0.4 * S);
-            doc.font("Carlito-Bold").fontSize(10 * S).fillColor(DARK).text(line);
+            doc.font("Carlito-Bold").fontSize(10 * S).fillColor(DARK).text(asciiSafe(line));
             doc.moveDown(0.12 * S);
             continue;
           }
           const bullet = /^[-•*]/.test(line);
           const text = bullet ? line.replace(/^[-•*]\s*/, "") : line;
           doc.font("Carlito-Regular").fontSize(9.5 * S).fillColor(DARK);
-          doc.text(bullet ? `•  ${text}` : text, { lineGap: 1 * S, paragraphGap: 2.5 * S, indent: bullet ? 11 * S : 0 });
+          doc.text(bullet ? `-  ${asciiSafe(text)}` : asciiSafe(text), { lineGap: 1 * S, paragraphGap: 2.5 * S, indent: bullet ? 11 * S : 0 });
           doc.moveDown(0.1 * S);
         }
 
         doc.end();
       });
 
-      // ONE-PAGE GUARANTEE: render at full size, shrink the fonts until it
-      // fits a single US Letter page (HR never wants a 2-page resume).
+      // PAGE GUARANTEE: render at full size, shrink the fonts until it fits the
+      // requested number of pages (maxPages). One page for tailored resumes.
       return (async () => {
         for (const scale of [1, 0.95, 0.9, 0.85, 0.8, 0.75]) {
           const { buf, pages } = await render(scale);
-          if (pages <= 1) { if (scale < 1) console.log(`[Jobs] resume fit to 1 page @ ${Math.round(scale * 100)}%`); return buf; }
+          if (pages <= maxPages) { if (scale < 1) console.log(`[Jobs] resume fit to ${pages} page(s) @ ${Math.round(scale * 100)}%`); return buf; }
           console.warn(`[Jobs] resume overflowed ${pages} pages @ ${Math.round(scale * 100)}% — shrinking…`);
         }
         const { buf } = await render(0.75);
@@ -167,24 +222,23 @@ async function getCoverLetterBuffer(coverLetterText) {
       const DARK = "#1a1a1a";
       const GRAY = "#555555";
 
-      // Sender header (name / title / contact)
-      doc.font("Carlito-Bold").fontSize(15).fillColor(ACCENT).text(PROFILE.name.toUpperCase());
-      doc.font("Carlito-Regular").fontSize(10).fillColor(DARK).text(PROFILE.title);
+      // Sender header (name / title / contact) — ASCII-safe, no vector rules
+      // (AI/ATS parsers read plain text cleanly; decorative lines can break them).
+      doc.font("Carlito-Bold").fontSize(15).fillColor(ACCENT).text(asciiSafe(PROFILE.name).toUpperCase());
+      doc.font("Carlito-Regular").fontSize(10).fillColor(DARK).text(asciiSafe(PROFILE.title));
       doc.font("Carlito-Regular").fontSize(8.5).fillColor(GRAY)
-        .text(`WAT (GMT+1) | ${PROFILE.email} | ${PROFILE.phone} | ${PROFILE.linkedin} | ${PROFILE.github}`);
-      doc.moveDown(0.4);
-      doc.moveTo(64, doc.y).lineTo(doc.page.width - 64, doc.y).lineWidth(1.1).strokeColor(ACCENT).stroke();
-      doc.moveDown(1);
+        .text(asciiSafe(`WAT (GMT+1) | ${PROFILE.email} | ${PROFILE.phone} | ${PROFILE.linkedin} | ${PROFILE.github}`));
+      doc.moveDown(0.8);
 
       // Date
       const today = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
-      doc.font("Carlito-Regular").fontSize(10).fillColor(DARK).text(today);
+      doc.font("Carlito-Regular").fontSize(10).fillColor(DARK).text(asciiSafe(today));
       doc.moveDown(1);
 
       // Body paragraphs
       const paragraphs = text.split(/\n{2,}/).map((p) => p.replace(/\s+/g, " ").trim()).filter(Boolean);
       for (const p of paragraphs) {
-        doc.font("Carlito-Regular").fontSize(11).fillColor(DARK).text(p, { lineGap: 2, paragraphGap: 6 });
+        doc.font("Carlito-Regular").fontSize(11).fillColor(DARK).text(asciiSafe(p), { lineGap: 2, paragraphGap: 6 });
         doc.moveDown(0.5);
       }
       doc.end();

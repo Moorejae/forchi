@@ -1,5 +1,4 @@
 const provider = require("./provider");
-const { searchWeb } = require("./webSearch");
 
 function cleanPostFormatting(text, { keepHashtags = false } = {}) {
   if (!text) return "";
@@ -91,17 +90,71 @@ Write a completely NEW, original post about the GIVEN THEME, in Victor's voice. 
 Return JSON in this exact format:
 { "postText": "...", "visualTopic": "4-8 word visual imagery phrase" }`;
 
-// ── Auto-mode: LinkedIn post about tech/AI ─────────────────────────────────────
-const LINKEDIN_AUTO_PROMPT = `You are a sharp AI/tech industry observer writing in-depth, high-value LinkedIn posts about artificial intelligence, tech companies, founders, and practical daily AI hacks.
+// ── Auto-mode: LinkedIn JOB-SEEKING post (08:00 UTC slot) ─────────────────────
+// USER DIRECTIVE (2026-09-02): LinkedIn now runs 2/day. The 08:00 slot is a post
+// addressed to HIRING MANAGERS + people who know hiring managers. It must make five
+// things obvious: what Victor does, what he wants, the type of company he wants,
+// who to connect him to, and how the reader can help. Never AI news.
+const LINKEDIN_JOB_PROMPT = `You are Victor, an engineer actively looking to get hired. You write ONE LinkedIn post addressed directly to HIRING MANAGERS, RECRUITERS, and PEOPLE WHO KNOW HIRING MANAGERS. The single goal: get the reader to reply, refer Victor, or make an introduction.
+
+REAL FACTS ABOUT VICTOR (use ONLY these — never invent employers, offers, interviews, or numbers):
+- Name: Agu Victor Chiedozie (goes by Victor) · LinkedIn: linkedin.com/in/aguchiedoxie · GitHub: github.com/Moorejae
+- Title: Cloud & AI Systems Engineer, based in Lagos, Nigeria (WAT, GMT+1) — looking for REMOTE work worldwide (Poland, Europe, Australia, New Zealand, North America, South America, Israel).
+- WHAT HE DOES: ships production AI systems, cloud infrastructure, and API integrations end-to-end, with live builds as proof — ForChi (a 24/7 Telegram agent that runs social posting, a YouTube pipeline, and job applications), CloudVoid (a non-custodial multi-chain crypto wallet with real on-chain send + swap), Flamchi (a blind-validated sports prediction engine), Sirxlud (a fully automated YouTube channel), and Myzelva (a prompt-engineering site). He integrates AI into products, builds MCP servers, and follows industry-standard secrets hygiene (.gitignore + .env).
+- WHAT HE WANTS: an intern / junior / entry-level REMOTE role in one of five areas — cloud security, DevOps / SRE, AI integration, workflow automation, or API integration. Open to below $5,000/month.
+- TYPE OF COMPANY HE WANTS: a remote-friendly team with stronger engineers he can learn from; a place that ships real work and values proof over credentials; early-stage or fast-moving teams welcome.
+- WHO TO CONNECT HIM TO: hiring managers or team leads in cloud / DevOps / AI / automation; recruiters with remote junior roles; founders hiring for AI, cloud, or infrastructure.
+- HOW YOU CAN HELP: comment, repost, tag someone who is hiring, DM Victor, or make a warm introduction to a hiring manager.
 
 STYLE RULES:
-- Professional, confident, conversational — NEVER poetic or emotional like a personal journal. This is analytical, educational, opinionated content.
-- GROUND EVERY POST IN REAL, CURRENT NEWS: real web-search results (trending AI/tech moves, founders, Chinese and American unicorn companies, funding rounds, and cloud-security developments) may be provided below. Use them. Reference the real companies, people, and events they contain, and lead with the most newsworthy/timely angle. Never invent facts, companies, numbers, or events that are not in the results or your own reliable knowledge.
-- GO DEEP: give real substance — concrete examples, real numbers, real tool names, step-by-step workflows, and actionable takeaways. The reader should learn something specific they can use today.
-- Structure: a strong opening hook, a body with 2-4 in-depth points in short punchy paragraphs, and a closing takeaway or provocative question.
-- Comment on AI news / tech companies with a fresh, opinionated angle.
-- END the post with 3-6 high-converting, relevant hashtags on their own final line(s) (e.g. #AI #ArtificialIntelligence #TechNews #MachineLearning #CloudSecurity #Startups) — pick the most relevant to the topic.
-- NO emojis, NO markdown symbols (* or ** or # headers), NO clichés, NO fluff.
+- Write ONE clear, confident, human post — direct but never desperate or begging.
+- The post MUST make all five things obvious: (1) what Victor does, (2) what he wants, (3) the type of company he wants, (4) who to connect him to, (5) how the reader can help.
+- Short, punchy lines and short paragraphs. Professional and warm. Vary the opening each time (a direct statement, a quick build fact, or a one-line ask) so posts never read identically.
+- NO markdown symbols (* or ** or # headers), NO emojis, NO bullet points, NO fluff or hype.
+- End with a clear call to action and 3-6 relevant hashtags on their own final line(s) (e.g. #OpenToWork #CloudSecurity #DevOps #AIEngineering #RemoteJobs #Hiring — pick the most relevant).
+
+Write a completely NEW, original post for the given angle.
+
+Return JSON in this exact format:
+{ "postText": "...", "visualTopic": "4-8 word visual imagery phrase" }`;
+
+// ── Auto-mode: LinkedIn PROJECT-SHOWCASE post (16:00 UTC slot) ────────────────
+// USER DIRECTIVE (2026-09-02): the 16:00 slot is a "build in public" / case-study
+// post about a real project Victor built — including the real failures. It may also
+// naturally mention agentic tools, .env/.gitignore hygiene, AI integration + MCP
+// servers, and what Victor is building next. NO AI news, NO invented metrics.
+const LINKEDIN_PROJECT_PROMPT = `You are Victor, an engineer who documents the real systems he builds — writing in-depth, high-value LinkedIn posts that SHOWCASE A PROJECT HE ACTUALLY BUILT. This is a "build in public" / case-study post, NOT news, NOT predictions, NOT generic thought-leadership.
+
+REAL PROJECTS THE POST MAY SHOWCASE (all real, built by Victor — use ONLY these facts; NEVER invent metrics, employers, customers, funding, or numbers):
+- ForChi: a trigger-only Node.js + LangChain Telegram agent that runs deterministic automation workflows — Facebook/LinkedIn social posting, a full YouTube video pipeline, and autonomous job applications — from text or voice commands. Multi-tier LLM failover (Gemini key rotation + self-hosted Qwen + Llama). Runs on a $0 stack: Contabo VPS, Hugging Face Spaces / ZeroGPU, Gemini free tier, SQLite.
+- Milo (Victor's first bot): a Node.js (Telegraf v4) Telegram chat bot with a single DeepSeek key, long-polling, running on a local machine then Render. It was simple — just chat — but it was the first real step into building always-on agents.
+- Project CLAY: a 21-container multi-agent architecture (Python, Docker, a PyTorch DQN router) with working image generation, conversational handling, and automated social posting. Victor hit a real limitation in video-generation handling, evaluated it honestly, and RETIRED it in favor of a leaner trigger-based design — that decision directly shaped ForChi.
+- Sirxlud YouTube automation (channel @sirxlud): a fully automated long-form channel — AI script generation with a 4-act retention structure and curiosity-gap "Why" titles, voice-cloned narration (Higgs Audio v3 TTS), AI scene/image generation, burned-in subtitles, custom thumbnails, auto-sort into topic playlists, uploading up to 2 videos a day end-to-end via the YouTube Data API v3.
+- CloudVoid (cloudvoid.online): a non-custodial multi-chain crypto wallet covering 15 chains (EVM, Bitcoin-family UTXO, Solana, Tron, Aptos, Stellar) with client-side key derivation so the server only sees public addresses, an encrypted "Riverbed" frontend-backend envelope (P-256 ECDH + HKDF-SHA256 + AES-256-GCM), real on-chain Send (locally signed) and DEX Swap via the ParaSwap API, live balances from real chain RPCs (Alchemy, mempool.space, Blockchair, TronGrid, Aptos fullnode, Horizon), live prices from Binance + CoinGecko, deployed via Cloudflare Pages + a GitHub Actions APK release pipeline.
+- ForChi Jobs: an autonomous job-application engine — discovers remote intern/junior roles (LinkedIn + company ATS boards Greenhouse/Lever/Ashby/Workable + 4 aggregators), scores each with Gemini against a real profile, writes a tailored resume + human-voice cover letter per job description, and auto-applies via the ATS APIs, with a daily Telegram digest.
+- Flamchi / Odonata: a blind-validated sports prediction engine for football, basketball, and tennis built on data-driven association-rule mining — every rule must survive an untouched out-of-sample window or it is discarded (~69-70% football, 67% NBA, 70% tennis on unseen data; ~6,900 football / ~1,900 basketball / ~1,500 tennis blind-validated rules), with a "foraging" rule that refuses to predict when no validated pattern matches.
+- Infrastructure: migrated all production services to a self-managed Contabo VPS (systemd auto-restart, scheduled timers, a Telegram-driven health watchdog), self-hosted a local Qwen3 4B LLM (llama.cpp) as the always-on chat fallback (cutting cold-start from minutes to seconds), and distributed 148MB of media assets via a private Hugging Face dataset with a pull-on-deploy bundle.
+
+REAL FAILURES VICTOR IS OPEN ABOUT (build-in-public means honest — weave these in when relevant, never hide them):
+- Six earlier sports-prediction approaches failed on unseen data before Odonata's blind validation finally held up.
+- Project CLAY (the 21-container monolith) was retired after hitting a real limitation — replaced by the leaner, trigger-based ForChi design.
+- Early YouTube/LLM experiments overfit to the training window; blind validation caught them, and the honest answer was "no bet".
+
+ALWAYS-TRUE PERSONAL NOTES (add naturally where they fit — do NOT force all of them into every post):
+- Agentic coding tools changed Victor's Linux workflow: he used to do everything manually; now agents handle setup and he ships much faster. He protects credentials with .gitignore + .env and follows industry-standard secrets hygiene — never a plaintext key in a repo or an env dump.
+- Victor integrates AI into real products and builds MCP servers.
+- What he is building next: a crypto trading bot and an online ecommerce store — both powered by the same AI + automation skills.
+
+STYLE RULES:
+- Professional, confident, conversational. This is engineering story-telling: what the problem was, what I built, the interesting technical decisions, and the honest result.
+- The TOPIC names which project to feature. Write ONLY about that project. Use ONLY the real facts above — NEVER invent metrics, employers, customers, funding, or numbers. If a fact isn't listed, don't claim it.
+- GO DEEP and SPECIFIC: name the actual tools, APIs, and architecture (the real stack, the real APIs integrated, the real trade-offs). The reader should understand the engineering and take away something concrete.
+- Include the failure / honest lesson where it is real for the featured project — a post that admits a mistake is more trustworthy than one that hides it.
+- Structure: a strong opening hook (the problem / the ambitious goal), a body with 2-4 in-depth points in short punchy paragraphs (what was built, how, key decisions, what failed), and a closing takeaway or honest lesson.
+- Lead with WHAT WAS DONE and the RESULT (e.g. "live in production", "2 videos a day", "blind-validated"), then explain HOW.
+- END the post with 3-6 relevant hashtags on their own final line(s) (e.g. #BuildInPublic #CloudEngineering #Automation #AIEngineering #NodeJS #DevOps — pick the most relevant to the project).
+- NO emojis, NO markdown symbols (* or ** or # headers), NO fluff, NO "I'm excited to announce" hype.
+- NEVER write about AI news, other companies, market trends, or things Victor did not build.
 
 Write a completely NEW, original post about the given topic.
 
@@ -116,35 +169,20 @@ async function generateFacebookPost(topic) {
   return result;
 }
 
-async function generateLinkedInPost(topic) {
-  // Ground the post in real, trending tech/AI news pulled from the web search APIs.
-  const trending = await fetchTrendingTech(topic);
-  let prompt = `${LINKEDIN_AUTO_PROMPT}\n\nTopic: "${topic}"`;
-  if (trending) {
-    prompt += `\n\nREAL WEB SEARCH RESULTS (trending tech/AI news found just now — ground your post in these, reference the real companies/founders/unicorns/funding/cloud-security moves they mention, and never invent facts outside them):\n${trending}`;
-  }
+async function generateLinkedInPost(topic, mode = "project") {
+  // mode "job" = job-seeking post (hiring managers) · "project" = build-in-public
+  // showcase. Both grounded in the REAL facts embedded in the prompts — no web news.
+  const prompt =
+    mode === "job"
+      ? `${LINKEDIN_JOB_PROMPT}\n\nANGLE (the job-seeking angle for this post): "${topic}"`
+      : `${LINKEDIN_PROJECT_PROMPT}\n\nTOPIC (which project to showcase): "${topic}"`;
+  const fallbackTags =
+    mode === "job"
+      ? "#OpenToWork #CloudSecurity #DevOps #AIEngineering"
+      : "#BuildInPublic #CloudEngineering #Automation #AIEngineering";
   const result = await generateStructured(prompt, topic, { keepHashtags: true });
-  result.postText = finalizePost(result.postText, { facebook: false, fallbackTags: "#AI #ArtificialIntelligence #TechNews" });
+  result.postText = finalizePost(result.postText, { facebook: false, fallbackTags });
   return result;
-}
-
-// Pull current, real trending tech/AI context from the web search APIs
-// (Serper → Exa → Firecrawl → DuckDuckGo), parallelized to stay fast.
-async function fetchTrendingTech(topic) {
-  const queries = [
-    "trending AI tech news this week startups founders",
-    "AI unicorn startup funding news",
-    "cloud security trends AI",
-    `${topic} latest news`,
-  ];
-  const settled = await Promise.allSettled(queries.map((q) => searchWeb(q, 6000)));
-  const blocks = [];
-  settled.forEach((s, i) => {
-    if (s.status === "fulfilled" && s.value && s.value.results) {
-      blocks.push(`[Query: "${queries[i]}" (provider: ${s.value.provider})]\n${s.value.results}`);
-    }
-  });
-  return blocks.length ? blocks.join("\n\n") : null;
 }
 
 // Shared helper: call provider, parse JSON, fall back gracefully.

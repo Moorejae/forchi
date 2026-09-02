@@ -19,7 +19,7 @@
 
 ```
   ForChi bot (Node.js + Telegraf) — Render free tier
-  ├─ Social workflow   (ACTIVE, 5x/day FB+LI)
+  ├─ Social workflow   (ACTIVE, 2x/day FB + 2x/day LI)
   ├─ Jobs workflow     (ACTIVE, constant auto)
   └─ VIDEO workflow    (NEW, 5 Shorts/day)  → src/workflows/video/
        script → voice → visuals → assemble → upload
