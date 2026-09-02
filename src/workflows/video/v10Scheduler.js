@@ -1,6 +1,7 @@
-// ForChi V10 daily scheduler — TWO 5-min video posts per day (US Eastern).
-//   Slot 1: BUILD 8:00  -> PUBLISH 14:00 + 15-50 min jitter
-//   Slot 2: BUILD 16:00 -> PUBLISH 21:00 + 15-50 min jitter
+// ForChi V10 daily scheduler — TWO 5-min video posts per day (Nigerian time, WAT).
+// USER DIRECTIVE (2026-09-02): publish the V10 videos at 2pm and 8pm Nigerian time.
+//   Slot 1: BUILD 8:00  -> PUBLISH 14:00 (2pm WAT) + 15-50 min jitter
+//   Slot 2: BUILD 16:00 -> PUBLISH 20:00 (8pm WAT) + 15-50 min jitter
 //
 // State lives in temp_media/v10_mode.json:
 //   { enabled, jitterMinMinutes, jitterMaxMinutes, targetTz,
@@ -23,12 +24,12 @@ const DEFAULTS = {
   enabled: false,
   jitterMinMinutes: 15,
   jitterMaxMinutes: 50,
-  targetTz: "America/New_York", // "US time" — Eastern by default
+  targetTz: "Africa/Lagos", // Nigerian time (WAT, UTC+1, no DST)
   // Legacy top-level fields (kept for backward compat; slots[] is the source of truth)
   buildHour: 8, buildMinute: 0, targetHour: 14, targetMinute: 0,
   slots: [
-    { label: "Morning", buildHour: 8,  buildMinute: 0, targetHour: 14, targetMinute: 0 },
-    { label: "Evening", buildHour: 16, buildMinute: 0, targetHour: 21, targetMinute: 0 },
+    { label: "Morning", buildHour: 8,  buildMinute: 0, targetHour: 14, targetMinute: 0 }, // 2pm WAT
+    { label: "Evening", buildHour: 16, buildMinute: 0, targetHour: 20, targetMinute: 0 }, // 8pm WAT
   ],
 };
 
@@ -48,7 +49,7 @@ function loadState() {
     sl.label = sl.label || (i === 0 ? "Morning" : "Evening");
     sl.buildHour = sl.buildHour != null ? sl.buildHour : (i === 0 ? 8 : 16);
     sl.buildMinute = sl.buildMinute != null ? sl.buildMinute : 0;
-    sl.targetHour = sl.targetHour != null ? sl.targetHour : (i === 0 ? 14 : 21);
+    sl.targetHour = sl.targetHour != null ? sl.targetHour : (i === 0 ? 14 : 20);
     sl.targetMinute = sl.targetMinute != null ? sl.targetMinute : 0;
     sl.nextBuildAt = sl.nextBuildAt || null;
     sl.nextPublishAt = sl.nextPublishAt || null;

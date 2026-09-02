@@ -114,7 +114,7 @@ Telegram voice (.ogg) → **Gemini direct transcription** (no ffmpeg needed) →
 - Keys in env: `SERPER_API_KEY`, `EXA_API_KEY`, `FIRECRAWL_API_KEY`, `TAVILY_API_KEY` (note: Tavily key was 401, kept last).
 
 ### 4.11 V10 long-form YouTube automation (channel @sirxlud)
-- **End-to-end pipeline** (`src/workflows/video/v10Pipeline.js`): script -> scene design -> voice -> images -> assemble -> thumb -> upload, up to **2 videos/day** (build 08:00/16:00 ET, publish 14:00/21:00 ET via `v10Scheduler.js`).
+- **End-to-end pipeline** (`src/workflows/video/v10Pipeline.js`): script -> scene design -> voice -> images -> assemble -> thumb -> upload, up to **2 videos/day** (build 08:00/16:00 WAT, publish 14:00/20:00 WAT = 2pm/8pm Nigerian time via `v10Scheduler.js`).
 - **Script generation** (`v10ScriptGen.js`): theme rotation across 5 playlists (Church & Bible, Family, World Folklore, Love & Relationships, Book Summaries), search-grounded obscure folklore, 4-act structure with a 5-beat retention arc, and curiosity-gap **"Why..." titles** (never clickbait; never "watch till the end").
 - **Voice cloning** (Higgs Audio v3 TTS on HF ZeroGPU, `forchi_higgs_tts3_space/app.py`): baked-in "Victor Moore (clean)" persona; consistent voice enforced by fixed seed + Higgs-only retries before any fallback.
 - **AI visuals**: Google image model scene designer + Vertex AI / Gemini image generation with a consistent narrator character; frames assembled with word-synced timing.

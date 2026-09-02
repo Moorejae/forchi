@@ -76,7 +76,7 @@ if (cmd === "on" || cmd === "off" || cmd === "status" || cmd === "now") {
   });
 } else {
   sched.startV10Scheduler({ buildFn, publishFn }, { notify });
-  console.log("[v10watch] V10 watchdog started (build 8:00/16:00 -> publish 14:00/21:00 ET)");
+  console.log("[v10watch] V10 watchdog started (build 8:00/16:00 -> publish 14:00/20:00 WAT)");
   // The scheduler's internal interval is unref'd (so a CLI `node v10Scheduler.js`
   // can exit cleanly). As a systemd daemon we MUST keep the event loop alive.
   const keepalive = setInterval(() => {}, 60 * 1000);
