@@ -9,26 +9,48 @@
 //      existing auto-apply engine can submit it like a company-board job.
 //      Otherwise the job stays "semi-auto" (discovered + scored + queued, but
 //      never auto-submitted — shown in /jobs queue with its URL for manual apply).
-const { stripHtml } = require("./ats");
+const { stripHtml, guessCompanyUrl } = require("./ats");
 
-// BOOLEAN OR search recipe (the user's LinkedIn terms, applied everywhere):
-// contractor / freelance / global remote / AI / AI integration / Automation,
-// plus the profile's target roles/skills. A job is kept if its title OR tags
-// contain ANY of these.
-const KEEP = [
-  "ai", "llm", "ml engineer", "machine learning", "mlops", "aiops", "agentic",
-  "ai integration", "ai automation", "ai solutions", "integration engineer", "solutions engineer",
-  "cloud", "devops", "backend", "full stack", "fullstack",
-  "automation", "python", "node", "sre", "platform engineer",
-  "contractor", "freelance", "contract", "global remote",
-  "infrastructure", "data engineer", "software engineer", "software developer",
-  "intern", "internship", "junior", "entry level", "graduate",
-  "aws", "azure", "gcp", "kubernetes", "docker", "terraform",
+// STRICT search recipe (USER DIRECTIVE 2026-09-01): the scanner ONLY keeps
+// INTERNSHIP / JUNIOR / ENTRY-LEVEL roles that fall under ONE of these domains:
+//   1. Cloud Security
+//   2. DevOps / SRE / Platform Engineering   (USER ADD 2026-09-01)
+//   3. AI Integration
+//   4. Workflow Automation
+//   5. API Integration
+// A job is kept ONLY if its title OR tags contain BOTH:
+//   - a LEVEL keyword (intern / internship / junior / entry level / graduate...)
+//   - a DOMAIN keyword from one of the clusters below.
+// Anything else (senior/lead/staff titles, unrelated domains, contractor/
+// freelance gigs, generic full-stack without a level signal) is dropped here so
+// the Gemini scoring calls aren't wasted on noise.
+const LEVEL_TERMS = [
+  "intern", "internship", "junior", "entry level", "entry-level",
+  "graduate", "new grad", "new graduate", "recent grad", "associate",
+];
+
+// Five focus domains (user directive + DevOps add). Each cluster has a regex so
+// partial matches ("AI engineer", "cloud security analyst", "devops intern")
+// still hit. Overlaps are fine — matches are OR'd across clusters.
+const DOMAINS = [
+  // 1. Cloud Security
+  /(cloud security|security engineer|security analyst|cyber|zero trust|waf|vulnerab|pen ?test|cloud security|aws|azure|gcp|google cloud|oracle cloud)/i,
+  // 2. DevOps / SRE / Platform Engineering (USER ADD 2026-09-01)
+  /(devops|sre|site reliability|platform engineer|cloud engineer|infrastructure engineer|kubernetes|docker|terraform|ci\/cd|linux|release engineer)/i,
+  // 3. AI Integration
+  /(ai integration|ai engineer|llm|machine learning|ml engineer|\bmlops\b|\baiops\b|agentic|ai agent|langchain|\brag\b|prompt|artificial intelligence|genai|generative ai|ai solutions|ai automation)/i,
+  // 4. Workflow Automation
+  /(workflow automation|automation engineer|workflow|process automation|\brpa\b|\bn8n\b|zapier|make\.com|business automation|automation developer|integration automation)/i,
+  // 5. API Integration
+  /(api integration|integration engineer|api engineer|backend|webhook|restful|\brest\b|api developer|apis?\b|sdk)/i,
 ];
 
 function passesFilter(title, tagsText) {
   const t = `${title || ""} ${tagsText || ""}`.toLowerCase();
-  return KEEP.some((k) => t.includes(k));
+  const hasLevel = LEVEL_TERMS.some((k) => t.includes(k));
+  if (!hasLevel) return false; // STRICT: must be intern/junior/entry-level
+  // STRICT: must match at least one of the four focus domains.
+  return DOMAINS.some((re) => re.test(t));
 }
 
 // Recency pre-filter: only keep jobs posted within MAX_AGE_DAYS (default 14),
@@ -63,6 +85,7 @@ function normalize({ source, refId, company, title, url, location, salary, descr
     company: company || "?",
     title: title || "Untitled",
     url: url || "",
+    companyUrl: guessCompanyUrl(company),
     location: location || "Remote",
     salary: salary || null,
     description: stripHtml(description).slice(0, 12000),

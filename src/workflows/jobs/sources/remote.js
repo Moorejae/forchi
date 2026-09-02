@@ -1,9 +1,10 @@
 // Remote job boards (no company config needed). RemoteOK = JSON, WeWorkRemotely = RSS.
-const { stripHtml } = require("./ats");
+const { stripHtml, guessCompanyUrl } = require("./ats");
 
 function normalize({ source, refId, company, title, url, location, salary, description, postedAt }) {
   return {
     source, refId, board: null, company, title, url,
+    companyUrl: guessCompanyUrl(company),
     location: location || "Remote",
     salary: salary || null,
     description: stripHtml(description).slice(0, 12000),

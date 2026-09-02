@@ -13,18 +13,47 @@
 // ATS source and auto-applied by the existing engine. Only jobs with no
 // discoverable ATS posting (incl. Easy Apply) stay semi-auto (email).
 const { searchWeb } = require("../../../llm/webSearch");
+const { guessCompanyUrl } = require("./ats");
 
-// User's LinkedIn search recipe: contractor / freelance / global remote / AI /
-// AI integration / Automation, remote, under 10 applicants, posted past 24h.
+// User's LinkedIn search recipe (STRICT — USER DIRECTIVE 2026-09-01): only
+// INTERNSHIP / JUNIOR / ENTRY-LEVEL roles under cloud security, DevOps / SRE,
+// AI integration, workflow automation, or API integration. Each query combines
+// a LEVEL word with a DOMAIN word so only on-target entry-level roles come back.
+// Remote.
 const KEYWORDS = [
-  "AI Engineer",
-  "AI Integration",
-  "Automation Engineer",
-  "contractor",
-  "freelance",
-  "global remote",
-  "Internship",
-  "Junior",
+  // Cloud Security
+  "cloud security intern",
+  "cloud security junior",
+  "security engineer intern",
+  "security analyst junior",
+  // DevOps / SRE / Platform (USER ADD 2026-09-01)
+  "devops intern",
+  "devops junior",
+  "devops engineer intern",
+  "cloud engineer intern",
+  "site reliability engineer junior",
+  "platform engineer intern",
+  "kubernetes intern",
+  // AI Integration
+  "AI integration intern",
+  "AI integration junior",
+  "AI engineer intern",
+  "AI engineer junior",
+  "LLM intern",
+  "machine learning intern",
+  "AI automation junior",
+  // Workflow Automation
+  "workflow automation intern",
+  "automation engineer intern",
+  "automation engineer junior",
+  "RPA junior",
+  // API Integration
+  "API integration intern",
+  "API integration junior",
+  "integration engineer junior",
+  "backend developer intern",
+  "backend developer junior",
+  "API developer junior",
 ];
 const MAX_CARDS = 40; // cards parsed per scan
 const MAX_DESC_FETCH = 10; // posting pages to fetch for description
@@ -202,6 +231,7 @@ async function fetchLinkedInJobs() {
     company: c.company,
     title: c.title,
     url: c.url,
+    companyUrl: guessCompanyUrl(c.company),
     location: c.location && !/remote/i.test(c.location) ? `Remote (${c.location})` : (c.location || "Remote"),
     salary: null,
     description: c.description || descMap.get(c.id) || "",

@@ -5,12 +5,37 @@ const { PROFILE } = require("./profile");
 const { PORTFOLIO } = require("./portfolio");
 const { detectLanguage, translateText } = require("./lang");
 
+// USER DIRECTIVE (2026-09-02): three resume versions — headline + summary swap
+// to match the role being applied to. Pick by keyword match on the job title +
+// description; fall back to cloud-ai.
+function pickResumeVersion(job) {
+  const text = `${job.title || ""} ${job.description || ""}`.toLowerCase();
+  const versions = PROFILE.resumeVersions || [];
+  if (!versions.length) return { headline: PROFILE.title, summary: PROFILE.summary };
+  // DevOps / SRE / platform / infrastructure
+  if (/(devops|sre|site reliability|platform engineer|cloud engineer|infrastructure|kubernetes|docker|terraform|ci\/cd|linux|release)/.test(text)) {
+    return versions.find((v) => v.key === "devops") || versions[0];
+  }
+  // Automation / workflow
+  if (/(workflow|automation|rpa|n8n|zapier|process autom|ai agent|agentic|trigger|pipeline|integration autom)/.test(text)) {
+    return versions.find((v) => v.key === "automation") || versions[0];
+  }
+  // Default: cloud & AI
+  return versions.find((v) => v.key === "cloud-ai") || versions[0];
+}
+
 async function tailorResume(job, companyResearch) {
-  const lang = detectLanguage(job.description || "");  const realData = JSON.stringify({
+  const lang = detectLanguage(job.description || "");
+  // USER DIRECTIVE (2026-09-02): pick the resume version (headline + summary)
+  // that best matches THIS job, so the headline + professional summary adapt to
+  // the role being applied to. Fall back to cloud-ai.
+  const version = pickResumeVersion(job);
+  const realData = JSON.stringify({
     profile: {
       name: PROFILE.name,
-      title: PROFILE.title,
-      summary: PROFILE.summary,
+      // headline + summary now come from the selected version.
+      headline: version.headline,
+      summary: version.summary,
       skills: PROFILE.skills,
       certifications: PROFILE.certifications,
       email: PROFILE.email,
@@ -19,8 +44,13 @@ async function tailorResume(job, companyResearch) {
       github: PROFILE.github,
     },
     // REAL work history (from the base resume) — never invent more.
+    // USER DIRECTIVE: company / title / dates are DROPPED from the resume body
+    // (handled in the ATS form fields), so only the project name + bullets are
+    // rendered. Bullets should read like Jennifer's: strong action verb + a
+    // concrete, real result/metric where one exists.
     experience: PROFILE.experience.map((e) => ({
-      role: e.role, company: e.company, years: e.years, bullets: e.bullets,
+      name: e.company ? e.company.split(" — ")[0] : e.role, // project name only
+      bullets: e.bullets,
     })),
     portfolio: PORTFOLIO.map((p) => ({ project: p.project, role: p.role, years: p.years, url: p.url, facts: p.facts })),
     // Company research — used ONLY to relate experience to THIS company's vision.
@@ -30,33 +60,37 @@ async function tailorResume(job, companyResearch) {
   const prompt = `Rewrite this candidate's resume so it fits THIS specific job posting. The employer wants someone who understands the ROLE — the job description explains exactly what that means — so every section must be tailored to it.
 
 REQUIREMENTS:
-0. HEADER — ALWAYS start with the header exactly like the candidate's original resume: NAME on one line, TITLE on the next line, then the contact line in this format: WAT (GMT+1) | email | phone | linkedin | github
-1. PROFESSIONAL SUMMARY — make it PRECISE and DIRECT, in the candidate's own style (short, confident, few sentences), but adapted to THIS job and company. Lead with the specific value this role needs. Do NOT use vague filler.
+0. HEADER — ALWAYS start with the header exactly like this: NAME on one line, then the HEADLINE (given below) on the next line, then the contact line in this format: WAT (GMT+1) | email | phone | linkedin | github
+1. PROFESSIONAL SUMMARY — use the SUMMARY given below, lightly adapted to THIS job and company (keep it short, confident, a few sentences, and lead with the specific value this role needs). Do NOT use vague filler.
 2. SKILLS — list ONLY the skills relevant to THIS job. Drop anything irrelevant. Order by relevance to the JD's keywords.
-3. PROJECTS — keep only the 1-3 most relevant projects, and rephrase their bullets to mirror THIS job's language and technology. (Prefer projects with live URLs: CloudVoid at https://cloudvoid.online and Myzelva at https://myzelva.com.) Format EACH project EXACTLY like this:
+3. PROJECTS — keep only the 1-3 most relevant projects, and rephrase their bullets to mirror THIS job's language and technology. (Prefer projects with live URLs: CloudVoid at https://cloudvoid.online, Myzelva at https://myzelva.com, and the YouTube automation channel at https://www.youtube.com/@sirxlud.) Format EACH project EXACTLY like this:
    PROJECT NAME
-   ROLE | YEARS | URL (include the live URL only if the project has one; otherwise ROLE | YEARS)
    - bullet
    - bullet
-   Keep the original PROJECTS structure — never merge projects into the EXPERIENCE section.
+   (NO company line, NO role line, NO dates line — those are handled in the application form. Just the project name, then its bullets.)
 4. EXPERIENCE — THIS IS THE DIFFERENTIATOR. Format each real entry EXACTLY like this proven template:
-   ROLE | COMPANY | REMOTE
-   DATES
+   PROJECT NAME
    - bullet
    - bullet
+   (NO "ROLE | COMPANY | REMOTE", NO DATES line — drop company, title, and dates entirely.)
 
    For each entry write 2-3 bullets, each ONE action-oriented line that:
+   - starts with a STRONG ACTION VERB (Built, Shipped, Automated, Integrated, Designed, Migrated, Hardened, Wired),
    - states what was ACTUALLY built, using ONLY the real "experience" data below (never invent employers, roles, dates, projects, or numbers),
    - MIRRORS THIS JOB'S OWN LANGUAGE AND TECHNOLOGY — use the JD's exact terms, frameworks, and pain points when describing the real work, so HR instantly sees you read their description,
-   - states the real result honestly — DO NOT invent metrics (no "reduced by 40%", no "99.99% uptime", no "5+ microservices" unless the real data actually says it).
-   Do NOT add generic filler like "same approach I'd bring to your vision". Mirroring their exact vocabulary in your real accomplishments IS the proof you read the JD.
+   - states the real result honestly and specifically — where the real data supports it, include the concrete metric (e.g. "2 videos a day", "15 chains", "148MB bundle", "~70% blind accuracy", "6 discarded approaches"), in the same punchy, results-first style as these examples:
+     "Conducted 500+ calls and converted prospects into real-estate investments"
+     "Reduced refund processing time by 80% with automated triggers"
+     "Raised NPS from 45 to 62 through customer-insight initiatives"
+   Do NOT invent metrics the real data doesn't say. Mirroring their exact vocabulary in your real accomplishments IS the proof you read the JD.
 5. CERTIFICATIONS — ALWAYS include this section at the bottom, using the candidate's real certifications listed below. Never omit it.
 
 HARD RULES:
 - Keep EVERY fact real. Never invent employers, titles, years, numbers, projects, or URLs. Only the profile + portfolio facts below may be used.
-- LEVEL POSITIONING: the candidate is applying for INTERN / JUNIOR / INTERMEDIATE roles. Present him as a fast, self-driven builder with real shipped projects who is actively learning from senior engineers. NEVER claim senior-level experience, never inflate years, never say "led a team", never say "10+ years". Highlight real ownership of shipped builds plus genuine eagerness to learn — that honesty is what makes a junior/intermediate candidate credible.
+- PROOF, NOT PROMISES (USER'S #1 RULE): every bullet must describe something the candidate has ALREADY BUILT and SHIPPED ("Built", "Shipped", "Integrated", "Automated") that matches THIS job — never "I can", "I will", "I'm able to". Map each real build to the exact JD requirement it satisfies.
+- LEVEL POSITIONING: the candidate is applying for INTERN / JUNIOR / ENTRY-LEVEL roles. Present him as a fast, self-driven builder with real shipped projects who is actively learning from senior engineers. NEVER claim senior-level experience, never inflate years, never say "led a team", never say "10+ years".
 - LANGUAGE: The job description is in ${lang}. Write the ENTIRE tailored resume in ${lang} (the candidate's real facts are given in English — translate them faithfully). Do NOT mix languages.
-- Plain text only: no markdown symbols, no hashtags, no tables, no bullets with asterisks or dashes. Use clean lines.
+- Plain text only: no markdown symbols, no hashtags, no tables, no decorative lines, no bullets with asterisks or dashes. Use clean lines. The word "Remote" (capital R, lowercase rest) may appear in project names; never write "REMOTE" in all-caps.
 - ONE PAGE: keep it tight — summary max 2 sentences, skills 3-4 compact lines, each project max 2 short bullets, each experience entry max 2 short lines, certifications 1 line each. Shorten until it fits one US Letter page.
 
 REAL CANDIDATE DATA:

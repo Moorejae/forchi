@@ -68,8 +68,10 @@ src/workflows/jobs/
 ## 3. Pipeline
 
 ### Stage 1 — DISCOVER
-- Pull jobs from: Greenhouse / Lever / Workable / Ashby company boards, RemoteOK, WeWorkRemotely, LinkedIn Jobs (discovery), and a **target-company list** (company careers pages).
-- Normalize every job to one shape: `{source, company, title, url, location, salary, description, posted_at}`.
+- **Source PRIORITY (USER DIRECTIVE 2026-09-02):** apply DIRECTLY through the company's own website/ATS board (Greenhouse / Lever / Workable / Ashby) — a LinkedIn/jobsite application is ~90% likely to never be seen by a real human. So the **target-company list (company careers pages)** is the primary source; LinkedIn/aggregators are used for discovery and for finding the company's direct ATS posting (which then gets applied to directly).
+- Pull jobs from: Greenhouse / Lever / Workable / Ashby company boards (the company's own site), RemoteOK, WeWorkRemotely, LinkedIn Jobs (discovery), and a **target-company list** (company careers pages).
+- Every job carries a **`companyUrl`** (the company's OWN website, never a LinkedIn/jobsite URL) so the resume/cover letter/email can point the reader at the real company site.
+- Normalize every job to one shape: `{source, company, title, url, companyUrl, location, salary, description, posted_at}`.
 - **Dedupe** by `(company, title, url)`; store raw text for matching. New jobs only.
 - Respect `robots.txt` + modest concurrency. A few hundred new jobs/day is trivial for free tier.
 
@@ -96,6 +98,7 @@ src/workflows/jobs/
   - **Ashby:** `jobs.ashbyhq.com/{company}/{postingId}/application`
 - **HARD RULE — never apply to the same job twice:** every application is recorded; before any submit the agent checks `(company, title, url)` + ATS post-id; the `applications` table has a unique index so a duplicate is impossible, even across restarts.
 - **Per-job resume tailoring:** the **tailor** rewrites the real resume for the specific job — reorders skills to lead with the JD's keywords, rephrases bullets to match, keeps every fact real. HR gets a resume that reads like it was written for that exact role.
+- **Resume versions (USER DIRECTIVE 2026-09-02):** the resume swaps its HEADLINE + PROFESSIONAL SUMMARY between three versions to match the role — **Cloud & AI Systems Engineer**, **DevOps & Cloud Infrastructure Engineer**, and **Automation & Workflow Systems Engineer**. Company, title, and dates are DROPPED from the resume body (handled in the ATS form fields); the body is project name + punchy, metric-driven bullets in a results-first style (strong action verb + a real, concrete result). "Remote" is written normally (never all-caps REMOTE).
 - **Anti-spam / realism controls:**
   - Daily cap (default ~8–10 applies) — human volume.
   - Apply window (e.g. only 08:00–20:00 **WAT**) so timestamps look human.

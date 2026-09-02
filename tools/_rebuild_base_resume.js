@@ -10,14 +10,18 @@ const RESUME = path.join(__dirname, "..", "data", "resume", "Agu_Victor_Chiedozi
 
 function buildBaseText() {
   const lines = [];
+  // USER DIRECTIVE (2026-09-02): the base resume uses the Cloud & AI Systems
+  // Engineer version (headline + summary), drops company/title/dates from the
+  // body (handled in the ATS form), and writes "Remote" not "REMOTE".
+  const version = (PROFILE.resumeVersions || []).find((v) => v.key === "cloud-ai") || {};
   // HEADER
   lines.push(PROFILE.name);
-  lines.push(PROFILE.title);
+  lines.push(version.headline || PROFILE.title);
   lines.push(`WAT (GMT+1) | ${PROFILE.email} | ${PROFILE.phone} | ${PROFILE.linkedin} | ${PROFILE.github}`);
   // SUMMARY
   lines.push("");
   lines.push("PROFESSIONAL SUMMARY");
-  lines.push(PROFILE.summary);
+  lines.push(version.summary || PROFILE.summary);
   // SKILLS
   lines.push("");
   lines.push("KEY SKILLS");
@@ -26,12 +30,13 @@ function buildBaseText() {
     skillGroups.push(items.join(", "));
   }
   lines.push(skillGroups.join("  |  "));
-  // PROJECTS + EXPERIENCE (direct summary format: role | company | years + bullets)
+  // PROJECTS + EXPERIENCE (project name + bullets only — no company/role/dates line)
   lines.push("");
   lines.push("TECHNICAL PROJECTS & EXPERIENCE");
   for (const e of PROFILE.experience) {
-    lines.push(`${e.role} | ${e.company} | REMOTE`);
-    lines.push(e.years);
+    // Project name = company field, minus any URL/dash decoration.
+    const name = e.company ? e.company.split(" — ")[0].replace(/\s*\([^)]*\)\s*$/, "").trim() : e.role;
+    lines.push(name);
     for (const b of e.bullets) lines.push(`- ${b}`);
     lines.push("");
   }
@@ -43,7 +48,10 @@ function buildBaseText() {
 
 async function main() {
   const text = buildBaseText();
-  const buf = await getResumeBuffer(text);
+  // maxPages: 2 — the BASE resume carries the FULL real work history legibly
+  // (2 pages is standard for a full background; per-job tailored resumes still
+  // render at maxPages: 1 via the normal apply path).
+  const buf = await getResumeBuffer(text, { maxPages: 2 });
   if (fs.existsSync(RESUME)) {
     fs.renameSync(RESUME, RESUME.replace(".pdf", "_old.pdf"));
     console.log("backed up old resume ->", path.basename(RESUME.replace(".pdf", "_old.pdf")));

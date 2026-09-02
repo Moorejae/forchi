@@ -92,6 +92,7 @@ async function sendMatchEmail(job, { coverLetter, resumeTailored }) {
     `📍 Location: ${job.location || "Remote"}`,
     `🗓 Posted: ${job.postedAt || "n/a"}`,
     `🔗 Apply here: ${job.url}`,
+    job.companyUrl ? `🌐 Company website: ${job.companyUrl} (prefer applying here — a direct company-site application is far more likely to be seen by a real human than a LinkedIn/jobsite one)` : "",
     "",
     "────────────────────────────",
     "TAILORED COVER LETTER",

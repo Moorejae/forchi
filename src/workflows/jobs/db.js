@@ -24,6 +24,7 @@ const SQLITE_DDL = `
       company TEXT NOT NULL,
       title TEXT NOT NULL,
       url TEXT NOT NULL,
+      company_url TEXT,
       location TEXT,
       salary TEXT,
       description TEXT,
@@ -70,6 +71,7 @@ const PG_DDL = `
       company TEXT NOT NULL,
       title TEXT NOT NULL,
       url TEXT NOT NULL,
+      company_url TEXT,
       location TEXT,
       salary TEXT,
       description TEXT,
@@ -123,6 +125,7 @@ async function openSqlite() {
   await db.exec(SQLITE_DDL);
   // Migrations for pre-existing databases (idempotent — ignore 'duplicate column').
   try { await db.exec("ALTER TABLE applications ADD COLUMN cover_letter_pdf TEXT"); } catch (e) {}
+  try { await db.exec("ALTER TABLE jobs ADD COLUMN company_url TEXT"); } catch (e) {}
   console.log("[JobsDB] SQLite initialized at", path.resolve(dbFile));
   return {
     run: (...a) => db.run(...a),
@@ -177,6 +180,7 @@ async function openPostgres() {
       await c.query(PG_DDL);
       // Migration for pre-existing databases (idempotent — ignore 'duplicate column').
       try { await c.query("ALTER TABLE applications ADD COLUMN IF NOT EXISTS cover_letter_pdf TEXT"); } catch (e) {}
+      try { await c.query("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS company_url TEXT"); } catch (e) {}
       client = c;
       console.log("[JobsDB] PostgreSQL connected (persistent across deploys).");
       return c;
@@ -232,18 +236,19 @@ async function insertJobs(list) {
   const db = await getJobsDB();
   const now = new Date().toISOString();
   const insert = USE_PG
-    ? `INSERT INTO jobs (source, ref_id, board, company, title, url, location, salary, description, posted_at, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)
+    ? `INSERT INTO jobs (source, ref_id, board, company, title, url, company_url, location, salary, description, posted_at, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)
        ON CONFLICT (source, company, title, url) DO NOTHING`
-    : `INSERT OR IGNORE INTO jobs (source, ref_id, board, company, title, url, location, salary, description, posted_at, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)`;
+    : `INSERT OR IGNORE INTO jobs (source, ref_id, board, company, title, url, company_url, location, salary, description, posted_at, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)`;
   let added = 0;
   for (const j of list || []) {
     if (!j || !j.company || !j.title || !j.url) continue;
     const seen = await db.get(`SELECT 1 FROM jobs WHERE url = ?`, [j.url]);
     if (seen) continue;
     const r = await db.run(insert,
-      [j.source || "?", j.refId || null, j.board || null, j.company, j.title, j.url, j.location || null,
+      [j.source || "?", j.refId || null, j.board || null, j.company, j.title, j.url,
+       j.companyUrl || null, j.location || null,
        j.salary || null, j.description || null, j.posted_at || null, now]
     );
     if (r.changes && r.changes > 0) added++;

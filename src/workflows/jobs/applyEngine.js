@@ -92,7 +92,10 @@ function isDateRange(line) {
 //  - a pipe-delimited role line ("ROLE | COMPANY | REMOTE" / "ROLE | YEARS | URL"),
 //  - a short date-range line ("2026 – Present"),
 //  - an explicit "(Live)" marker,
-//  - a short PROJECT NAME line whose NEXT line is a pipe-delimited role line.
+//  - a short PROJECT NAME line whose NEXT line is a pipe-delimited role line,
+//  - a short, non-bullet, non-section-heading line whose NEXT line is a bullet
+//    (the USER DIRECTIVE 2026-09-02 format: project name on its own line, then
+//    its "- bullet" lines — company/title/dates are dropped from the body).
 // NOTE (USER DIRECTIVE 2026-09-02): a lone em/en dash or a year mention inside
 // prose is NOT a header — the old check (any dash or any "20xx") was bolding the
 // professional summary body in some resumes. Summary body text is never bold.
@@ -100,12 +103,15 @@ function isProjectHeader(line, nextLine) {
   const t = cleanLine(line);
   if (!t || t.length > 90) return false;
   // Body bullet lines ("- ...", "• ...") are never headers — without this guard,
-  // the lookahead below would bold the last bullet before the next entry's
-  // pipe-delimited role line.
+  // the lookahead below would bold the last bullet before the next entry.
   if (/^[-•*]/.test(t)) return false;
   if (/\|/.test(t) || /\(Live\)/i.test(t) || isDateRange(t)) return true;
   const n = cleanLine(nextLine || "");
-  return n.length > 0 && n.length <= 90 && /\|/.test(n);
+  if (n.length > 0 && n.length <= 90 && /\|/.test(n)) return true;
+  // New format: a short name line immediately followed by a bullet is a project
+  // header (its bullets follow). Section headings are excluded by isSectionHeading.
+  if (n.length > 0 && /^[-•*]/.test(n)) return true;
+  return false;
 }
 
 function getResumeBuffer(tailoredText, opts = {}) {
