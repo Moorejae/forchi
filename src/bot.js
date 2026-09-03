@@ -24,6 +24,7 @@ const videoWorkflow = require("./workflows/video/index");
 const videoScheduler = require("./workflows/video/scheduler");
 const authWatch = require("./workflows/video/authWatch");
 const tiktokAuthWatch = require("./workflows/video/tiktokAuthWatch");
+const linkedinAuthWatch = require("./workflows/social/linkedinAuthWatch");
 
 // Force IPv4 for DNS resolution (avoids IPv6 timeouts in containers)
 if (dns.setDefaultResultOrder) dns.setDefaultResultOrder("ipv4first");
@@ -104,6 +105,7 @@ db.getDB()
     videoScheduler.initVideoScheduler({ notify: (t) => jobsNotify.sendMessage(t) });
     authWatch.startAuthWatch({ notify: (t) => jobsNotify.sendMessage(t) });
     tiktokAuthWatch.startTikTokAuthWatch({ notify: (t) => jobsNotify.sendMessage(t) });
+    linkedinAuthWatch.startLinkedInAuthWatch({ notify: (t) => jobsNotify.sendMessage(t) });
   })
   .catch((err) => console.error("[DB Error]", err.message));
 
@@ -263,12 +265,21 @@ async function handleIncomingText(ctx, text) {
         : "token ✅")
       : `MISSING ⛔ — say "tiktok auth" to get the approve link`;
     const fbOk = !!(process.env.FACEBOOK_PAGE_ID && (process.env.FACEBOOK_PAGE_TOKEN || process.env.FACEBOOK_PAGE_ACCESS_TOKEN));
+    const lia = await linkedinAuthWatch.getAuthState();
+    const liLine = lia.tokenPresent
+      ? (lia.active
+        ? (lia.hoursLeft != null
+          ? `token ✅ · expires ~${Math.max(0, Math.floor(lia.hoursLeft / 24))}d ${Math.max(0, lia.hoursLeft % 24)}h · say "linkedin auth" to re-link anytime`
+          : "token ✅")
+        : `EXPIRED ⛔ — say "linkedin auth" to get the re-approve link`)
+      : `MISSING ⛔ — say "linkedin auth" to get the approve link`;
     const lines = [
       `🎬 *ForChi video workflow*`,
       `Enabled: ${vs.enabled ? "ON ✅" : "OFF ⛔"}`,
       `Scheduler: ${videoScheduler.getSchedulerState().registered ? "registered ✅" : "MISSING ⛔"}`,
       `YouTube auth: ${authLine}`,
       `TikTok auth: ${ttLine}`,
+      `LinkedIn auth: ${liLine}`,
       `Facebook Page: ${fbOk ? "configured ✅" : "MISSING ⛔"}`,
       vs.lastPost
         ? `Last Short: ${vs.lastPost.at} · topic: ${vs.lastPost.topic}\n${vs.lastPost.url}`
@@ -307,6 +318,23 @@ async function handleIncomingText(ctx, text) {
     const url = tiktok.consentUrl() || "couldn't build URL (check TIKTOK_CLIENT_KEY / TIKTOK_CALLBACK_URL)";
     return ctx.reply(
       `${head}\n\n\`${url}\`\n\nApprove → *Allow* → you'll land on the green connected page.`,
+      { parse_mode: "Markdown" }
+    );
+  }
+
+  // LinkedIn auth link on demand — "linkedin auth" / "linkedin authorize" / "li link".
+  if (/(linkedin|li)\s+(auth|authorize|link|re-auth|relink)/i.test(text) || /auth\s+(link|url|linkedin)/i.test(text)) {
+    const lia = await linkedinAuthWatch.getAuthState();
+    const head = lia.tokenPresent
+      ? (lia.active
+        ? (lia.hoursLeft != null
+          ? `Your LinkedIn token is live ✅ — it expires ~${Math.max(0, Math.floor(lia.hoursLeft / 24))}d ${Math.max(0, lia.hoursLeft % 24)}h from now. Re-authorize anytime to renew it.`
+          : "Your LinkedIn token is live ✅ — you can re-authorize anytime.")
+        : "Your LinkedIn token has EXPIRED ⛔ — re-authorize once and posts keep working.")
+      : "No LinkedIn token yet — authorize once and I'll post to LinkedIn from there.";
+    const url = linkedinAuthWatch.consentUrl() || "couldn't build URL (check LINKEDIN_CLIENT_ID / LINKEDIN_CALLBACK_URL)";
+    return ctx.reply(
+      `${head}\n\n\`${url}\`\n\nApprove the login → you'll land on the callback page and I'll take it from there.`,
       { parse_mode: "Markdown" }
     );
   }
