@@ -95,6 +95,44 @@ let registered = false;
 let cronTask = null;
 let lastRun = null; // { at, fb: "ok"|"err", li: "ok"|"err", fbError, liError }
 
+// USER DIRECTIVE (2026-09-03): a LinkedIn/Facebook post that is SKIPPED because
+// the global workflow lock is held (e.g. a long V10 build) must NOT be lost for
+// the day. We retry shortly after until the lock frees (up to RETRY_WINDOW_MS),
+// then post. Without this, a V10 build overlapping the 08:00/16:00 UTC slot
+// silently dropped that day's LinkedIn posts.
+const RETRY_WINDOW_MS = 3 * 60 * 60 * 1000; // retry for up to 3h after the slot (covers long V10 builds)
+const RETRY_DELAY_MS = 5 * 60 * 1000;       // every 5 min
+let retryTimer = null;
+let retryDeadline = 0;
+
+function scheduleRetry(fn) {
+  if (retryTimer) return; // already retrying
+  if (!retryDeadline) retryDeadline = Date.now() + RETRY_WINDOW_MS;
+  retryTimer = setTimeout(async () => {
+    retryTimer = null;
+    try {
+      const res = await fn();
+      // Keep retrying until the window expires, then give up (the slot is lost).
+      if (res && res.skipped) {
+        if (Date.now() < retryDeadline) {
+          console.warn("[Auto] lock still held — retrying again in a few minutes");
+          retryTimer = null;
+          scheduleRetry(fn);
+        } else {
+          console.warn("[Auto] gave up retrying this post (retry window expired)");
+          retryDeadline = 0;
+        }
+      } else {
+        retryDeadline = 0; // posted successfully — reset for next slot
+      }
+    } catch (e) {
+      console.error("[Auto] retry failed:", e.message);
+      retryDeadline = 0;
+    }
+  }, RETRY_DELAY_MS);
+  if (retryTimer.unref) retryTimer.unref();
+}
+
 // Read-only snapshot used by /diag and the self-healing repair flow.
 function getSchedulerState() {
   return { registered, running, autoMode: autoMode.isEnabled(), lastRun, schedule: AUTO_SCHEDULE };
@@ -108,6 +146,78 @@ function resetRunning() {
   }
 }
 
+// The actual social-posting work (one slot). Returns { posted, skipped }.
+async function runSocialTick() {
+  if (!autoMode.isEnabled()) {
+    console.log(`[Auto] Auto mode is OFF — skipping scheduled post at ${new Date().toISOString()}`);
+    return { posted: false, skipped: false };
+  }
+  if (running) {
+    console.log("[Auto] Previous run still in progress — skipping this tick.");
+    return { posted: false, skipped: false };
+  }
+  // Global single-workflow lock: don't post while a V10 build/publish runs.
+  if (!wlock.tryAcquire("social", { ttlMs: 20 * 60 * 1000 })) {
+    const o = wlock.owner();
+    console.warn(`[Auto] SKIPPED social post — ${o ? o.name + " (pid " + o.owner + ")" : "another workflow"} holds the lock`);
+    return { posted: false, skipped: true };
+  }
+  running = true;
+  try {
+    // Rotate themes by current day + hour so each run differs and changes daily
+    // across the (now much larger) pools — never the same sequence two days in a row.
+    // Fresh topic per platform (persisted, no day-to-day repeats).
+    // LinkedIn posts at BOTH slots: 08:00 = job-seeking, 16:00 = project showcase.
+    const fbTheme = pickFresh(FB_THEMES, "fb");
+    const liSlot = linkedinSlot();
+    const liTopic = liSlot
+      ? pickFresh(liSlot === "job" ? LI_JOB_TOPICS : LI_PROJECT_TOPICS, liSlot === "job" ? "li_job" : "li_project")
+      : null;
+
+    console.log(`[Auto] ${new Date().toISOString()} — generating posts (FB: "${fbTheme}" | LI: ${liSlot ? `"${liTopic}" (${liSlot === "job" ? "job-seeking" : "project showcase"})` : "SKIPPED"})`);
+
+    // 1. Generate content in the two styles in parallel (LinkedIn only at its 2 slots).
+    const [fb, li] = await Promise.allSettled([
+      generateFacebookPost(fbTheme),
+      liSlot ? generateLinkedInPost(liTopic, liSlot) : Promise.resolve({ postText: "", visualTopic: "" }),
+    ]);
+
+    // 2. Post each to its own platform (each generates its own styled image).
+    const fbContent = fb.status === "fulfilled" ? fb.value : { postText: fbTheme, visualTopic: fbTheme };
+    const liContent = liSlot && li.status === "fulfilled" ? li.value : { postText: "", visualTopic: "" };
+
+    const jobs = [
+      socialWorkflow.run({ destinations: ["facebook"], content: fbContent.postText, visualTopic: fbContent.visualTopic }),
+    ];
+    if (liSlot && liContent.postText) {
+      jobs.push(socialWorkflow.run({ destinations: ["linkedin"], content: liContent.postText, visualTopic: liContent.visualTopic }));
+    }
+    const results = await Promise.allSettled(jobs);
+
+    const perPlatform = { facebook: "err", linkedin: liSlot ? "err" : "skip", fbError: null, liError: null };
+    results.forEach((r, i) => {
+      const platform = i === 0 ? "facebook" : "linkedin";
+      if (r.status === "fulfilled" && r.value.success) {
+        perPlatform[platform] = "ok";
+        console.log(`[Auto] ✅ ${platform} post succeeded`);
+      } else {
+        const err = r.status === "fulfilled" ? r.value.errorSummary : r.reason?.message;
+        perPlatform[`${platform === "facebook" ? "fb" : "li"}Error`] = err || "unknown";
+        console.error(`[Auto] ❌ ${platform} post failed: ${err || "unknown"}`);
+      }
+    });
+    lastRun = { at: new Date().toISOString(), fb: perPlatform.facebook, li: perPlatform.linkedin };
+    return { posted: true, skipped: false };
+  } catch (err) {
+    console.error("[Auto] Error during auto-post:", err.message);
+    lastRun = { at: new Date().toISOString(), fb: "err", li: "err", fbError: err.message, liError: err.message };
+    return { posted: false, skipped: false };
+  } finally {
+    running = false;
+    wlock.release("social");
+  }
+}
+
 function initScheduler() {
   if (registered) {
     console.log("[Scheduler] Auto mode already registered — skipping duplicate.");
@@ -118,71 +228,12 @@ console.log(`[Scheduler] Initializing AUTO mode (FB 2/day 8:00+16:00 UTC · LI 2
   cronTask = cron.schedule(
     AUTO_SCHEDULE,
     async () => {
-      if (!autoMode.isEnabled()) {
-        console.log(`[Auto] Auto mode is OFF — skipping scheduled post at ${new Date().toISOString()}`);
-        return;
-      }
-      if (running) {
-        console.log("[Auto] Previous run still in progress — skipping this tick.");
-        return;
-      }
-      // Global single-workflow lock: don't post while a V10 build/publish runs.
-      if (!wlock.tryAcquire("social", { ttlMs: 20 * 60 * 1000 })) {
-        const o = wlock.owner();
-        console.warn(`[Auto] SKIPPED social post — ${o ? o.name + " (pid " + o.owner + ")" : "another workflow"} holds the lock`);
-        return;
-      }
-      running = true;
-      try {
-        // Rotate themes by current day + hour so each run differs and changes daily
-        // across the (now much larger) pools — never the same sequence two days in a row.
-        // Fresh topic per platform (persisted, no day-to-day repeats).
-        // LinkedIn posts at BOTH slots: 08:00 = job-seeking, 16:00 = project showcase.
-        const fbTheme = pickFresh(FB_THEMES, "fb");
-        const liSlot = linkedinSlot();
-        const liTopic = liSlot
-          ? pickFresh(liSlot === "job" ? LI_JOB_TOPICS : LI_PROJECT_TOPICS, liSlot === "job" ? "li_job" : "li_project")
-          : null;
-
-        console.log(`[Auto] ${new Date().toISOString()} — generating posts (FB: "${fbTheme}" | LI: ${liSlot ? `"${liTopic}" (${liSlot === "job" ? "job-seeking" : "project showcase"})` : "SKIPPED"})`);
-
-        // 1. Generate content in the two styles in parallel (LinkedIn only at its 2 slots).
-        const [fb, li] = await Promise.allSettled([
-          generateFacebookPost(fbTheme),
-          liSlot ? generateLinkedInPost(liTopic, liSlot) : Promise.resolve({ postText: "", visualTopic: "" }),
-        ]);
-
-        // 2. Post each to its own platform (each generates its own styled image).
-        const fbContent = fb.status === "fulfilled" ? fb.value : { postText: fbTheme, visualTopic: fbTheme };
-        const liContent = liSlot && li.status === "fulfilled" ? li.value : { postText: "", visualTopic: "" };
-
-        const jobs = [
-          socialWorkflow.run({ destinations: ["facebook"], content: fbContent.postText, visualTopic: fbContent.visualTopic }),
-        ];
-        if (liSlot && liContent.postText) {
-          jobs.push(socialWorkflow.run({ destinations: ["linkedin"], content: liContent.postText, visualTopic: liContent.visualTopic }));
-        }
-        const results = await Promise.allSettled(jobs);
-
-        const perPlatform = { facebook: "err", linkedin: liSlot ? "err" : "skip", fbError: null, liError: null };
-        results.forEach((r, i) => {
-          const platform = i === 0 ? "facebook" : "linkedin";
-          if (r.status === "fulfilled" && r.value.success) {
-            perPlatform[platform] = "ok";
-            console.log(`[Auto] ✅ ${platform} post succeeded`);
-          } else {
-            const err = r.status === "fulfilled" ? r.value.errorSummary : r.reason?.message;
-            perPlatform[`${platform === "facebook" ? "fb" : "li"}Error`] = err || "unknown";
-            console.error(`[Auto] ❌ ${platform} post failed: ${err || "unknown"}`);
-          }
-        });
-        lastRun = { at: new Date().toISOString(), fb: perPlatform.facebook, li: perPlatform.linkedin };
-      } catch (err) {
-        console.error("[Auto] Error during auto-post:", err.message);
-        lastRun = { at: new Date().toISOString(), fb: "err", li: "err", fbError: err.message, liError: err.message };
-      } finally {
-        running = false;
-        wlock.release("social");
+      const res = await runSocialTick();
+      // If the lock was held (V10 build running), retry shortly after so the
+      // day's LinkedIn/Facebook post is NOT lost.
+      if (res && res.skipped) {
+        console.warn("[Auto] post skipped due to lock — will retry in a few minutes");
+        scheduleRetry(runSocialTick);
       }
     },
     { scheduled: true, timezone: "UTC" }
