@@ -153,17 +153,35 @@ async function runOnce({ runId, theme, dryRun = false, buildOnly = false, notify
               py(["tools/_v10_tighten_voice.py", "--dir", voiceDir]);
             }
           } else {
-            // HIGGS-FIRST (default): HF ZeroGPU, fast; fall back to Contabo CPU.
-            try {
-              py(["tools/_v10_repl_voice.py", "--clone", "--manifest", manifestPath, "--out", voiceDir, ...limArgs]);
-              if (wavCount(voiceDir) < needScenes) throw new Error(`Higgs gave ${wavCount(voiceDir)}/${needScenes} wavs`);
-              console.log(`[v10] voice: Higgs rendered ${wavCount(voiceDir)} scenes`);
-              py(["tools/_v10_tighten_voice.py", "--dir", voiceDir]);
-            } catch (e) {
-              console.warn(`[v10] voice: Higgs failed (${e.message}) — falling back to Contabo CPU`);
-              py(contaboCmd);
-              py(["tools/_v10_tighten_voice.py", "--dir", voiceDir]);
+            // HIGGS-FIRST (default): HF ZeroGPU, fast. USER DIRECTIVE (2026-09-01):
+            // the voice must NEVER change mid-video. Higgs is resume-safe (it only
+            // renders the missing scenes on re-runs), so we RETRY Higgs up to 3x to
+            // fill every scene with the SAME "Victor Moore (clean)" voice. Only if
+            // Higgs still cannot produce a scene do we fall back to Contabo CPU —
+            // and even then the missing scenes keep the primary renderer's output
+            // for the scenes that already succeeded.
+            let higgsOk = false;
+            for (let vp = 1; vp <= 3 && !higgsOk; vp++) {
+              try {
+                py(["tools/_v10_repl_voice.py", "--clone", "--manifest", manifestPath, "--out", voiceDir, ...limArgs]);
+                const got = wavCount(voiceDir);
+                if (got >= needScenes) { higgsOk = true; console.log(`[v10] voice: Higgs rendered ${got}/${needScenes} scenes`); }
+                else {
+                  console.warn(`[v10] voice: Higgs pass ${vp} gave ${got}/${needScenes} — retrying missing scenes (same voice)`);
+                  await new Promise((r) => setTimeout(r, 20000 * vp));
+                }
+              } catch (e) {
+                console.warn(`[v10] voice: Higgs pass ${vp} failed (${e.message})`);
+                await new Promise((r) => setTimeout(r, 20000 * vp));
+              }
             }
+            if (!higgsOk) {
+              const missing = needScenes - wavCount(voiceDir);
+              console.warn(`[v10] voice: Higgs incomplete (${missing} scenes short) — Contabo fills ONLY the missing scenes`);
+              py(contaboCmd);
+            }
+            if (wavCount(voiceDir) < needScenes) throw new Error(`voice: only ${wavCount(voiceDir)}/${needScenes} scenes rendered`);
+            py(["tools/_v10_tighten_voice.py", "--dir", voiceDir]);
           }
         } else if (stage === "images") {
           // PRIMARY (2026-08-29): Google Vertex AI gemini-2.5-flash-image via
@@ -207,15 +225,90 @@ async function runOnce({ runId, theme, dryRun = false, buildOnly = false, notify
             py(["tools/_v10_gemini_qwen_batch.py", "--manifest", manifestPath, "--images", imagesDir, ...limArgs]);
             files = fs.readdirSync(imagesDir).filter((f) => /^rep_.*\.png$/.test(f) && fs.statSync(path.join(imagesDir, f)).size > 0);
           }
-          const need = needShots || manifest.scenes.length;
-          if (files.length < need) throw new Error(`images: only ${files.length}/${need} frames generated`);
+          // TRUNCATION GUARD (2026-09-01): guarantee EVERY scene has >=1 frame so
+          // the assembler never drops a scene — a dropped final scene means the
+          // video's last sentences vanish. Fill any fully-missing scene with the
+          // nearest available frame (visual continuity beats an abrupt cut).
+          const fillManifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+          const nScenes = (fillManifest.scenes || []).length;
+          let prevImg = null;
+          for (let sc = 1; sc <= nScenes; sc++) {
+            let got = null;
+            for (let j = 1; j <= 9; j++) {
+              const p = path.join(imagesDir, `rep_${String(sc).padStart(2, "0")}_${String(j).padStart(2, "0")}.png`);
+              if (fs.existsSync(p) && fs.statSync(p).size > 0) { got = p; break; }
+            }
+            if (got) { prevImg = got; continue; }
+            if (prevImg) {
+              const dest = path.join(imagesDir, `rep_${String(sc).padStart(2, "0")}_01.png`);
+              fs.copyFileSync(prevImg, dest);
+              console.warn(`[v10] images: scene ${sc} missing frames — filled from scene ${sc - 1} (keeps final sentences in the video)`);
+            } else {
+              console.warn(`[v10] images: scene ${sc} missing frames and no prior frame to copy`);
+            }
+          }
+          files = fs.readdirSync(imagesDir).filter((f) => /^rep_.*\.png$/.test(f) && fs.statSync(path.join(imagesDir, f)).size > 0);
+          // TRUNCATION GUARD (2026-09-01): guarantee EVERY scene has at least one
+          // frame so the assembler never drops a scene from BOTH video and audio
+          // (a dropped FINAL scene = the last sentences vanish from the video).
+          // Fill any scene that came up empty with the nearest available frame;
+          // the assembler reuses that frame for the scene's missing shots.
+          {
+            const m2 = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+            const nScenes = (m2.scenes || []).length;
+            let prevImg = null;
+            for (let sc = 1; sc <= nScenes; sc++) {
+              let got = null;
+              for (let j = 1; j <= 9; j++) {
+                const p = path.join(imagesDir, `rep_${String(sc).padStart(2, "0")}_${String(j).padStart(2, "0")}.png`);
+                if (fs.existsSync(p) && fs.statSync(p).size > 0) { got = p; break; }
+              }
+              if (got) { prevImg = got; continue; }
+              if (prevImg) {
+                const dest = path.join(imagesDir, `rep_${String(sc).padStart(2, "0")}_01.png`);
+                fs.copyFileSync(prevImg, dest);
+                console.warn(`[v10] images: scene ${sc} missing frames — filled from scene ${sc - 1} (keeps final sentences in video)`);
+              } else {
+                console.warn(`[v10] images: scene ${sc} missing frames and no prior frame to copy — will fail the check`);
+              }
+            }
+            files = fs.readdirSync(imagesDir).filter((f) => /^rep_.*\.png$/.test(f) && fs.statSync(path.join(imagesDir, f)).size > 0);
+          }
+          // Every scene must be representable (>=1 frame). Missing shots within a
+          // scene are fine — the assembler reuses the scene's available frame.
+          {
+            const m3 = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+            const zeroScenes = [];
+            for (let sc = 1; sc <= (m3.scenes || []).length; sc++) {
+              const has = files.some((f) => f.startsWith(`rep_${String(sc).padStart(2, "0")}_`));
+              if (!has) zeroScenes.push(sc);
+            }
+            if (zeroScenes.length) throw new Error(`images: scenes with zero frames (would truncate video): ${zeroScenes.join(", ")}`);
+          }
           console.log(`[v10] images: ${files.length} frames present (${needShots} shots required)`);
         } else if (stage === "assemble") {
+          // USER DIRECTIVE (2026-09-01): burn subtitles INTO the video (bottom
+          // captions synced to each shot) + the curiosity-gap "WHY" hook over
+          // the opening seconds — every video ships with visible captions that
+          // carry the "why", not just an optional YouTube caption track.
+          const v10m = require("./v10Metadata.js");
+          const metaForHook = JSON.parse(fs.existsSync(metaPath) ? fs.readFileSync(metaPath, "utf8") : "{}");
+          const hookTitle = v10m.buildV10CuriosityTitle(metaForHook.title || "", metaForHook);
           // --to-downloads is a Windows-dev convenience only (copies to ~/Downloads);
           // on the VPS that dir may not exist, so skip it to avoid a post-write crash.
           const dlArg = process.platform === "win32" ? ["--to-downloads"] : [];
-          py(["tools/_v10_repl_assemble.py", "v10_" + rid, "--manifest", manifestPath, "--images", imagesDir, "--wavs", voiceDir, "--no-overlays", "--no-kenburns", ...dlArg, "--sfx"]);
+          py(["tools/_v10_repl_assemble.py", "v10_" + rid, "--manifest", manifestPath, "--images", imagesDir, "--wavs", voiceDir, "--subtitles", "--hook", hookTitle.slice(0, 90), "--no-kenburns", ...dlArg, "--sfx"]);
           if (!fs.existsSync(mp4) || fs.statSync(mp4).size < 500000) throw new Error("assemble output missing/too small");
+          // TRUNCATION GUARD (2026-09-01): the video must not be shorter than the
+          // narration (dropped final scene = missing last sentences). Compare the
+          // assembled duration to the total narration wav duration.
+          const nTotal = fs.readdirSync(voiceDir)
+            .filter((f) => /^r\d\d\.wav$/.test(f))
+            .reduce((a, f) => a + probeDur(path.join(voiceDir, f)), 0);
+          const vDur = probeDur(mp4);
+          if (nTotal > 1 && vDur > 0 && vDur < nTotal * 0.90) {
+            throw new Error(`assemble truncated: video ${vDur.toFixed(1)}s < narration ${nTotal.toFixed(1)}s`);
+          }
         } else if (stage === "thumb") {
           const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
           // USER DIRECTIVE (2026-08-31): thumbnail carries the same curiosity-gap

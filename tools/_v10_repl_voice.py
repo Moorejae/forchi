@@ -20,6 +20,9 @@ PITCH = "-10Hz"  # lighter per user: less heavy than -20Hz
 HIGGS_VOICE = "Victor Moore (clean)"
 HIGGS_TOKENS = "<|prosody:speed_slow|>"   # NO pitch_low (that's what made it robotic-deep)
 HIGGS_SEED = 7  # varied from 1234 (1234 carried the r01 pitch-ramp latent artifact)
+# USER DIRECTIVE (2026-09-01): 4096 max audio tokens truncated long scenes mid-
+# sentence (the "last sentences missing" bug). 8192 lets a full scene render.
+HIGGS_MAX_TOKENS = 8192
 
 # lazy import gradio_client for Higgs mode
 _client = None
@@ -42,13 +45,13 @@ async def synth(text, out_mp3, rate):
     com = edge_tts.Communicate(text, VOICE, rate=rate, pitch=PITCH)
     await com.save(out_mp3)
 
-def synth_higgs(text, out_wav, voice=HIGGS_VOICE, tokens=HIGGS_TOKENS, seed=HIGGS_SEED):
+def synth_higgs(text, out_wav, voice=HIGGS_VOICE, tokens=HIGGS_TOKENS, seed=HIGGS_SEED, max_tokens=HIGGS_MAX_TOKENS):
     """Render with the Higgs baked voice (returns the wav path)."""
     c = get_higgs_client()
     res = c.predict(
         tokens + text,
         voice, None, None,
-        0.9, 0.95, 50, 4096, seed,
+        0.9, 0.95, 50, max_tokens, seed,
         api_name="/predict",
     )
     p = res if isinstance(res, str) else res[0]

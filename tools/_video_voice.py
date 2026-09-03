@@ -229,8 +229,9 @@ def split_phrases(text, max_len=220):
     return phrases
 
 
-def synthesize(client, text, mode='clean', temperature=0.7, seed=-1, max_tokens=4096):
-    """Synthesize one phrase via Higgs. Returns the local wav path."""
+def synthesize(client, text, mode='clean', temperature=0.7, seed=-1, max_tokens=8192):
+    """Synthesize one phrase via Higgs. Returns the local wav path.
+    max_tokens 8192 (bumped from 4096 — 4096 truncated long phrases mid-sentence)."""
     voice = DEFAULT_VOICE
     if mode == 'whisper':
         text = f'<|style:whispering|>{text}'
@@ -308,7 +309,7 @@ def tighten_silences(wav_path, max_sil=0.25, lead=0.05, tail=0.10, threshold=0.0
 
 
 def render_script(text, out_dir, mode='clean', client=None, resume=True,
-                  temperature=0.7, seed=-1, max_tokens=4096, max_len=220):
+                  temperature=0.7, seed=-1, max_tokens=8192, max_len=220):
     """Render a full script -> per-phrase wavs in out_dir/pN.wav.
 
     PRIMARY: Contabo CPU F5-TTS worker (off HF). If the worker is unreachable,

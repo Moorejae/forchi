@@ -68,7 +68,7 @@ def restart_space(timeout_min=8):
     print('  [v10voice] WARNING: space not READY; continuing anyway', flush=True)
 
 
-def synthesize(client, text, temperature=0.7, seed=-1, max_tokens=4096):
+def synthesize(client, text, temperature=0.7, seed=-1, max_tokens=8192):
     res = client.predict(
         NARRATOR_TOKENS + text, V10_VOICE, None, '',
         temperature, 0.95, 50, max_tokens, seed,

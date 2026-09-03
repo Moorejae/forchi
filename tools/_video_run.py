@@ -42,20 +42,38 @@ def main():
     wavs = [r['wav'] for r in res]
     durs = durations(wavs)
 
-    # 2b. enforce max duration: if narration is too long, trim INTERIOR phrases
-    # so the opening AND the final anchor line always survive (never end mid-poem).
-    MAX_NARR = 54.0  # slow baritone pace; leaves room under the 58s cap
-    total_narr = sum(durs)
-    while total_narr > MAX_NARR and len(phrases) > 2:
-        # drop a middle interior phrase (keep the first + last sentence)
+    # 2b. enforce max duration — NEVER end mid-poem. The final anchor sentence
+    # MUST always play in full, so we trim to fit under the Shorts 58s hard cap
+    # (see _video_assemble.MAX_SEC), accounting for the inter-phrase gaps (0.35s)
+    # and the 1.5s closure tail the assembler adds. Trim INTERIOR phrases first
+    # (keeps the opening hook + the closing anchor); if it still can't fit, drop
+    # the OPENING phrase(s) so the last statement is never cut.
+    GAP = 0.35      # inter-phrase gap the assembler inserts (matches _video_assemble)
+    TAIL = 1.5      # closure tail after the final word (matches _video_assemble)
+    CAP = 58.0      # hard cap for YouTube Shorts (matches _video_assemble.MAX_SEC)
+    SAFETY = 1.5    # headroom so the video never sits exactly on the cap
+
+    def total_len(ds):
+        return sum(ds) + (len(ds) - 1) * GAP + TAIL
+
+    total = total_len(durs)
+    print(f'[run] narration {sum(durs):.1f}s, {len(phrases)} phrases -> assembled ~{total:.1f}s')
+    # 1) trim interior phrases (keep first + last anchor line)
+    while total > CAP - SAFETY and len(phrases) > 2:
         idx = 1 + (len(phrases) - 2) // 2
         phrases.pop(idx)
         wavs.pop(idx)
         durs.pop(idx)
-        total_narr = sum(durs)
-        print(f'[run] narration {total_narr:.1f}s > cap -> trimmed interior to '
-              f'{len(phrases)} phrases')
-    print(f'[run] narration {total_narr:.1f}s, {len(phrases)} phrases')
+        total = total_len(durs)
+        print(f'[run] assembled {total:.1f}s > cap -> trimmed interior to {len(phrases)} phrases')
+    # 2) still over: drop the OPENING phrase(s) — the closing anchor must play in full
+    while total > CAP - SAFETY and len(phrases) > 1:
+        phrases.pop(0)
+        wavs.pop(0)
+        durs.pop(0)
+        total = total_len(durs)
+        print(f'[run] assembled {total:.1f}s > cap -> dropped opening phrase (anchor kept)')
+    print(f'[run] final narration {sum(durs):.1f}s, {len(phrases)} phrases -> assembled {total:.1f}s')
 
     # 3. stitch clips
     from _video_stitch import pick_clips

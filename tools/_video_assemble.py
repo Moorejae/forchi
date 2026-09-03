@@ -153,6 +153,20 @@ def assemble(phrases, phrase_wavs, clips, out_name, music=True, watermark=True, 
         t += d + gap
     total = (t - gap + TAIL) if durs else 0.0
 
+    # NEVER cut the final anchor sentence. If the assembled length would exceed
+    # the Shorts cap, drop LEADING phrases (interior/opening) so the last
+    # statement always plays in full — the cap must never land mid-speech.
+    # (Primary trimming happens in _video_run.py; this guards direct calls.)
+    while total > MAX_SEC and len(durs) > 1:
+        phrases.pop(0); phrase_wavs.pop(0); clips.pop(0); durs.pop(0)
+        starts = []
+        t = 0.0
+        for d in durs:
+            starts.append(t)
+            t += d + gap
+        total = (t - gap + TAIL) if durs else 0.0
+        print(f'  [asm] assembled {total:.1f}s > cap {MAX_SEC:.0f}s -> dropped leading phrase (anchor kept)', flush=True)
+
     # 2. build per-phrase video segments (clip looped/trimmed to phrase duration + small pad)
     segs = []
     for i, (clip, dur) in enumerate(zip(clips, durs)):

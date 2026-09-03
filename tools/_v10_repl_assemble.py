@@ -96,8 +96,20 @@ def probe_dur(p):
     hh, mm, ss = m.group(1).split(":")
     return float(hh) * 3600 + float(mm) * 60 + float(ss)
 
-def esc(s):
-    return s.replace(":", "\\:").replace("'", "\\'").replace("%", "\\%")
+def wrap_text(t, width=46, max_lines=3):
+    """Word-wrap a caption into fixed-width lines (ffmpeg drawtext does not
+    auto-wrap). Caps at max_lines so a long narration never overflows the frame."""
+    words = str(t or "").split()
+    lines, cur = [], []
+    for w in words:
+        if cur and sum(len(x) + 1 for x in cur) + len(w) > width:
+            lines.append(" ".join(cur))
+            cur = [w]
+        else:
+            cur.append(w)
+    if cur:
+        lines.append(" ".join(cur))
+    return "\n".join(lines[:max_lines])
 
 
 # ---- MICRO-FRAME SFX LAYER (research: tick/whoosh/thud/chime at frame boundaries) ----
@@ -157,7 +169,7 @@ def build_sfx_track(events, work, out):
 
 
 def assemble(manifest_path, images_dir, wavs_dir, out_name, to_downloads=True, cards=None, plan=None,
-             no_overlays=False, kenburns=True, sfx=True):
+             no_overlays=False, kenburns=True, sfx=True, subtitles=False, labels=False, hook=None):
     with open(manifest_path, encoding="utf-8") as f:
         m = json.load(f)
     scenes = m["scenes"]
@@ -441,36 +453,67 @@ def assemble(manifest_path, images_dir, wavs_dir, out_name, to_downloads=True, c
     except Exception:
         pass
 
-    # 4. drawtext overlays — labels/bottom attached to their specific SHOT segment windows.
-    #    (Punch-card segments own no overlay; the card carries its own text.)
+    # 4. drawtext overlays — burned-in subtitles (bottom) + optional scene labels
+    #    (top) + a "WHY" hook over the opening seconds. Each overlay is attached
+    #    to its own SHOT segment window so text syncs with the spoken word.
+    #    Text is passed via textfile= (NOT text=) so arbitrary narration content
+    #    (apostrophes, colons, em-dashes, newlines) can NEVER break the ffmpeg
+    #    filter-graph parsing. Files live in the work dir (cwd=work on the mux).
     vf = []
+    tfile_i = 0
     if not no_overlays:
         for si, owner in enumerate(seg_owner):
             if owner is None:
-                continue
+                continue  # punch-card segment (carries its own text)
             st = shots[owner]
             s = st["s"]
-            plan_mode = seg_plan[si]
             s0, s1 = starts[si], starts[si] + durs[si]
-            show_label = plan_mode or ((not s.get("label_shot")) or s.get("label_shot") == st["shot"])
-        labels = []
-        if s.get("label") and show_label:
-            labels.append((s["label"], 0))
-        if s.get("label2") and show_label:
-            labels.append((s["label2"], 1))
-        if s.get("label3") and show_label:
-            labels.append((s["label3"], 2))
-        for (txt, idx) in labels:
-            y = 90 + idx * 90
+            # BURNED-IN SUBTITLE: the shot's narration, shown while it's spoken.
+            if subtitles:
+                sub = str(st["sh"].get("text") or "").strip()
+                if sub:
+                    tf = f"sub_{tfile_i}.txt"; tfile_i += 1
+                    with open(os.path.join(work, tf), "w", encoding="utf-8") as f:
+                        f.write(wrap_text(sub, width=46))
+                    vf.append(
+                        f"drawtext=fontfile={font_rel}:textfile={tf}:fontsize=44:fontcolor=white:"
+                        f"borderw=5:bordercolor=black@0.9:line_spacing=6:x=(w-text_w)/2:y=h-240:"
+                        f"enable='between(t,{s0:.2f},{s1:.2f})'")
+            # Optional scene label at top (off unless --labels).
+            if labels and s.get("label"):
+                tf = f"sub_{tfile_i}.txt"; tfile_i += 1
+                with open(os.path.join(work, tf), "w", encoding="utf-8") as f:
+                    f.write(str(s["label"]))
+                vf.append(
+                    f"drawtext=fontfile={font_rel}:textfile={tf}:fontsize=60:fontcolor=white:"
+                    f"borderw=6:bordercolor=black@0.9:x=(w-text_w)/2:y=80:"
+                    f"enable='between(t,{s0:.2f},{s1:.2f})'")
+            # Legacy per-scene label/bottom fields (kept for other manifests).
+            for (txt, idx) in [((s.get("label") or ""), 0), ((s.get("label2") or ""), 1), ((s.get("label3") or ""), 2)]:
+                if txt and (not labels):
+                    tf = f"sub_{tfile_i}.txt"; tfile_i += 1
+                    with open(os.path.join(work, tf), "w", encoding="utf-8") as f:
+                        f.write(str(txt))
+                    vf.append(
+                        f"drawtext=fontfile={font_rel}:textfile={tf}:fontsize=64:fontcolor=white:"
+                        f"borderw=6:bordercolor=black@0.9:x=(w-text_w)/2:y={90 + idx * 90}:"
+                        f"enable='between(t,{s0:.2f},{s1:.2f})'")
+            if s.get("bottom") and not subtitles:
+                tf = f"sub_{tfile_i}.txt"; tfile_i += 1
+                with open(os.path.join(work, tf), "w", encoding="utf-8") as f:
+                    f.write(str(s["bottom"]))
+                vf.append(
+                    f"drawtext=fontfile={font_rel}:textfile={tf}:fontsize=40:fontcolor=white:"
+                    f"borderw=4:bordercolor=black@0.85:line_spacing=8:x=(w-text_w)/2:y=h-200:"
+                    f"enable='between(t,{s0:.2f},{s1:.2f})'")
+        # "WHY" hook burned over the opening seconds (the video's curiosity title).
+        if hook:
+            with open(os.path.join(work, "hook.txt"), "w", encoding="utf-8") as f:
+                f.write(wrap_text(hook, width=40))
             vf.append(
-                f"drawtext=fontfile={font_rel}:text='{esc(txt)}':fontsize=64:fontcolor=white:"
-                f"borderw=6:bordercolor=black@0.9:x=(w-text_w)/2:y={y}:"
-                f"enable='between(t,{s0:.2f},{s1:.2f})'")
-        if s.get("bottom") and (plan_mode or (not s.get("bottom_shot") or s.get("bottom_shot") == st["shot"])):
-            vf.append(
-                f"drawtext=fontfile={font_rel}:text='{esc(s['bottom'])}':fontsize=40:fontcolor=white:"
-                f"borderw=4:bordercolor=black@0.85:line_spacing=8:x=(w-text_w)/2:y=h-200:"
-                f"enable='between(t,{s0:.2f},{s1:.2f})'")
+                f"drawtext=fontfile={font_rel}:textfile=hook.txt:fontsize=54:fontcolor=white:"
+                f"borderw=5:bordercolor=black@0.9:line_spacing=6:x=(w-text_w)/2:y=h-420:"
+                f"enable='between(t,0.0,7.0)'")
     vfstr = ",".join(vf) if vf else "null"
 
     # 5. final mux
@@ -499,9 +542,10 @@ def assemble(manifest_path, images_dir, wavs_dir, out_name, to_downloads=True, c
                "-map", "[v]", "-map", "[a]",
                "-c:v", "libx264", "-crf", "19", "-preset", "veryfast",
                "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2", out]
-    rr = subprocess.run(cmd, capture_output=True, text=True, errors="ignore")
+    # cwd=work so the relative fontfile=font.ttf (copied to the work dir) resolves.
+    rr = subprocess.run(cmd, capture_output=True, text=True, errors="ignore", cwd=work)
     if not os.path.exists(out):
-        print("  [replasm] FAILED", (rr.stderr or "")[-400:])
+        print("  [replasm] FAILED", (rr.stderr or "")[-2000:])
         return None
     print(f"  [replasm] WROTE {out} ({os.path.getsize(out)//1024}KB, {probe_dur(out):.1f}s)")
     mp3 = out.rsplit(".", 1)[0] + ".mp3"
@@ -548,4 +592,7 @@ if __name__ == "__main__":
     assemble(manifest, images, wavs, out_name, to_downloads=to_dl, cards=cards, plan=plan,
              no_overlays="--no-overlays" in flags,
              kenburns="--no-kenburns" not in flags,
-             sfx="--no-sfx" not in flags)
+             sfx="--no-sfx" not in flags,
+             subtitles="--subtitles" in flags,
+             labels="--labels" in flags,
+             hook=val("--hook", "").strip() or None)

@@ -334,10 +334,12 @@ async function run({ destinations = [], content = "", visualTopic = null }) {
   // Final formatting for every post: no markdown asterisks or header hashes, keep
   // real hashtags on the bottom (adding sensible ones when none exist), and for
   // Facebook guarantee the "Fickle youth" signature right above the hashtags.
+  // USER DIRECTIVE (2026-09-01): LinkedIn fallback tags are build-in-public /
+  // project-showcase tags (no more #TechNews / #AI-news).
   const fb = destinations.includes("facebook");
   finalContent = finalizePost(finalContent, {
     facebook: fb,
-    fallbackTags: fb ? "#FickleYouth #Healing #LettingGo" : "#AI #ArtificialIntelligence #TechNews",
+    fallbackTags: fb ? "#FickleYouth #Healing #LettingGo" : "#BuildInPublic #CloudEngineering #Automation #AIEngineering",
   });
 
   // 2. Parallel destination execution using Promise.allSettled (Section 4 Latency Budget & Independence)

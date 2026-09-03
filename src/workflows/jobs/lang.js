@@ -9,7 +9,7 @@ function detectLanguage(text) {
     },
     German: {
       chars: /[äöüß]/g,
-      words: /\b(und|der|die|das|für|mit|wir|suchen|erfahrung|team|bewerbung|anschreiben)\b/g,
+      words: /\b(und|der|die|das|für|mit|wir|suchen|erfahrung|bewerbung|anschreiben|anforderungen|unserer)\b/g,
     },
     Spanish: {
       chars: /[ñ¿¡]/g,
@@ -25,14 +25,18 @@ function detectLanguage(text) {
     },
     Dutch: {
       chars: /[ij]/g,
-      words: /\b(en|voor|met|zoeken|ervaring|team|bieden|vereisten|sollicitatie|motivatiebrief)\b/g,
+      words: /\b(voor|zoeken|ervaring|bieden|vereisten|sollicitatie|motivatiebrief|werknemer|aanvragen)\b/g,
     },
     Italian: {
       chars: /[àèéìòù]/g,
-      words: /\b(per|con|esperienza|cerchiamo|team|offriamo|requisiti|per favore|lettera di presentazione)\b/g,
+      words: /\b(per|con|esperienza|cerchiamo|offriamo|requisiti|per favore|lettera di presentazione|azienda)\b/g,
     },
   };
 
+  // NOTE (2026-09-01): "team" was removed from the German/Dutch/Italian word
+  // lists — it is a common English word and was falsely flagging English job
+  // descriptions as non-English, which produced German/other resumes + cover
+  // letters for English postings. Also dropped ambiguous Dutch "en"/"met".
   let best = null;
   let bestScore = 0;
   for (const [lang, { chars, words }] of Object.entries(marks)) {
@@ -42,6 +46,8 @@ function detectLanguage(text) {
     const score = (lang === "Dutch" ? 0 : c) + w * 3;
     if (score > bestScore) { bestScore = score; best = lang; }
   }
+  // A single ambiguous word match (score == 3) is NOT enough — require either
+  // 2+ language words or an accent char + a word, else treat as English.
   return bestScore >= 3 ? best : "English";
 }
 
