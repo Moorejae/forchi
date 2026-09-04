@@ -1,17 +1,33 @@
 // src/workflows/video/playlists.js
 // YouTube playlist management (create / list / add video) + topic -> playlist mapping.
 // Used by the auto-workflow to sort every Short into a themed playlist.
+//
+// The Shorts workflow posts 3 Shorts/day across THREE posting pillars (categories):
+//   Romance & Relationship / Life & Philosophy / Family & Christian Moral.
+// Every Short is filed into its category's themed playlist so the channel is
+// organized by topic (the user's directive). The category label (passed from
+// index.js) is the lookup key; each maps to a dedicated titled playlist.
 const TOPIC_PLAYLISTS = {
-  "dating, romance and the ache of waiting": "Dating & Romance",
-  "what we owe the people we love": "Relationships",
-  "grace, faith and forgiveness": "Christian Faith & Morals",
-  "the quiet work of a lasting relationship": "Relationships",
-  "why we lie to ourselves about love": "Human Behavior",
-  "christian hope in a broken world": "Christian Faith & Morals",
-  "the courage of staying when it is hard": "Relationships",
-  "human behavior and the masks we wear": "Human Behavior",
-  "love that outlasts time": "Romance & Poetry",
-  "the cost of virtue and the weight of empathy": "Christian Faith & Morals",
+  // Three posting pillars (categories) -> themed playlists
+  "Romance & Relationship": "Victor Moore — Romance & Relationships",
+  "Life & Philosophy": "Victor Moore — Life & Philosophy",
+  "Family & Christian Moral": "Victor Moore — Faith & Family",
+  // Backwards-compat topic-level keys (some videos were recorded by topic)
+  "dating, romance and the ache of waiting": "Victor Moore — Romance & Relationships",
+  "what we owe the people we love": "Victor Moore — Romance & Relationships",
+  "the quiet work of a lasting relationship": "Victor Moore — Romance & Relationships",
+  "why we lie to ourselves about love": "Victor Moore — Life & Philosophy",
+  "love that outlasts time": "Victor Moore — Romance & Relationships",
+  "human behavior and the masks we wear": "Victor Moore — Life & Philosophy",
+  "the cost of virtue and the weight of empathy": "Victor Moore — Faith & Family",
+  "the courage of staying when it is hard": "Victor Moore — Romance & Relationships",
+  "the illusion of safety and the tyranny of tomorrow": "Victor Moore — Life & Philosophy",
+  "outgrowing what no longer fits": "Victor Moore — Life & Philosophy",
+  "grace, faith and forgiveness": "Victor Moore — Faith & Family",
+  "christian hope in a broken world": "Victor Moore — Faith & Family",
+  "family, faith and the weight of duty": "Victor Moore — Faith & Family",
+  "forgiveness as a discipline": "Victor Moore — Faith & Family",
+  "the quiet sacrifice that holds the world together": "Victor Moore — Faith & Family",
 };
 const DEFAULT_PLAYLIST = "Victor Moore";
 
@@ -33,8 +49,9 @@ async function ytJson(token, url, opts = {}) {
   return res.json();
 }
 
-// Create a playlist (defaults to private; pass 'public' to make it visible).
-async function createPlaylist(token, title, description = "", privacyStatus = "private") {
+// Create a playlist (defaults to public so the themed playlists are visible on
+// the channel; pass 'private' to hide one).
+async function createPlaylist(token, title, description = "", privacyStatus = "public") {
   const data = await ytJson(
     token,
     "https://www.googleapis.com/youtube/v3/playlists?part=snippet,status",

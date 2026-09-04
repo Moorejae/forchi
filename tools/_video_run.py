@@ -24,10 +24,21 @@ def main():
 
     # 1. script
     script = args.script
+    MIN_WORDS = 75  # ~40-45s spoken slowly; guarantees a proper Short (not a 22s clip)
     if args.generate or not script:
         from _video_script import generate_script_checked
-        script = generate_script_checked(model='gemini-3.6-flash', topic=args.topic, style=args.style, min_words=60)
-        print(f'[run] generated script ({len(script.split())} words, style={args.style}):\n{script}\n')
+        # Re-generate until the script is long enough. Gemini occasionally returns
+        # a short (~40-50 word) draft that would render a ~20s video; the checked
+        # generator expands internally, and this extra loop is a hard backstop so
+        # a too-short script NEVER gets voiced/uploaded.
+        for attempt in range(4):
+            script = generate_script_checked(model='gemini-3.6-flash', topic=args.topic,
+                                             style=args.style, min_words=MIN_WORDS)
+            wc = len(script.split())
+            print(f'[run] generated script ({wc} words, style={args.style}):\n{script}\n')
+            if wc >= MIN_WORDS:
+                break
+            print(f'[run] script too short ({wc}w < {MIN_WORDS}w) -> regenerating (try {attempt + 1})', flush=True)
     if not script:
         script = ("The graveyard is full of words people waited too long to say. "
                   "We hoard tomorrow like it owes us a favour. "
@@ -52,6 +63,7 @@ def main():
     TAIL = 1.5      # closure tail after the final word (matches _video_assemble)
     CAP = 58.0      # hard cap for YouTube Shorts (matches _video_assemble.MAX_SEC)
     SAFETY = 1.5    # headroom so the video never sits exactly on the cap
+    MIN_TOTAL = 28.0  # a Short under 28s looks broken/too short — reject it
 
     def total_len(ds):
         return sum(ds) + (len(ds) - 1) * GAP + TAIL
@@ -73,6 +85,12 @@ def main():
         durs.pop(0)
         total = total_len(durs)
         print(f'[run] assembled {total:.1f}s > cap -> dropped opening phrase (anchor kept)')
+    # 3) hard guard: if the final assembled length is still too short to be a real
+    #    Short, fail loudly instead of uploading a broken 20s clip.
+    if total < MIN_TOTAL:
+        raise SystemExit(
+            f'[run] assembled length {total:.1f}s < {MIN_TOTAL:.0f}s minimum — script too short '
+            f'({len(phrases)} phrases, {sum(durs):.1f}s narration). Not uploading a broken clip.')
     print(f'[run] final narration {sum(durs):.1f}s, {len(phrases)} phrases -> assembled {total:.1f}s')
 
     # 3. stitch clips

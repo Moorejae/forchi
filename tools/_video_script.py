@@ -49,6 +49,20 @@ STYLE RULES (mandatory):
 - 75-110 words total (about 35-45 seconds spoken slowly). Aim for a complete piece — do not be brief.
 - Deep baritone pacing: mix short punchy sentences (4-12 words) with one or two long flowing ones.
 - Use the lexicon naturally: shadow, ego, contrast, grace, quiet, sleep, remember, never, faith, love, time, soul, dark, light, truth, wait, rest.
+
+OPENING VARIETY (CRITICAL — the channel was sounding repetitive):
+- NEVER start with "We are told that", "We are taught that", "We often", or any "We are ___ that ___" formula.
+- Vary how each script opens. Rotate among different opening moves, for example:
+  * a direct image ("The porch light has been on for years."),
+  * a question ("Have you ever loved someone you could not reach?"),
+  * a confession ("I have been afraid of silence my whole life."),
+  * a scene ("There is a chair that still waits by the window."),
+  * a command ("Put down the tomorrow you are saving."),
+  * a cold fact ("Every graveyard is full of words that were never said."),
+  * a definition ("Love is not a feeling; it is a decision you keep making.").
+- Do NOT reuse the opening sentence, the "It is not." subversion formula every time, or the same
+  closing structure across scripts. Each script must feel like a NEW piece, not a rewrite of the last.
+
 - END ON THE FINAL ANCHOR LINE. Do NOT end with a question.
 - No narration markers, no quotes, no numbering, no meta commentary. Output ONLY the spoken words.
 - Do NOT explain.
@@ -123,6 +137,21 @@ def _max_similarity(text, history):
         inter = len(g & hg)
         best = max(best, inter / (len(g) + len(hg) - inter))
     return best
+
+
+# Opening patterns that made every Short sound the same. Reject a script that
+# starts with any of these so the channel varies its openings.
+_BANNED_OPENINGS = [
+    'we are told', 'we are taught', 'we often', 'we have been told', 'we have been taught',
+    'we are raised', 'we are raised to', 'we learn', 'we have learned', 'we are always told',
+]
+
+
+def _banned_opening(text):
+    """True if the script opens with a banned repetitive formula."""
+    t = (text or '').strip().lower()
+    first = ' '.join(t.split()[:6])
+    return any(first.startswith(b) for b in _BANNED_OPENINGS)
 
 
 def _next_topic(history):
@@ -232,11 +261,12 @@ def generate_script_checked(model='gemini-3.6-flash', topic=None, style=None, mi
 
     # anti-repetition guard: reject if too similar to any past post, rewrite fresh
     dup_tries = 0
-    while _max_similarity(text, history) > 0.28 and dup_tries < max_dup_tries:
+    while (_max_similarity(text, history) > 0.28 or _banned_opening(text)) and dup_tries < max_dup_tries:
         dup_tries += 1
-        print(f'  [script] too similar to a past script (sim={_max_similarity(text, history):.2f}) -> rewriting (try {dup_tries})', flush=True)
+        reason = 'banned opening ("We are told/taught/often…")' if _banned_opening(text) else f'sim={_max_similarity(text, history):.2f}'
+        print(f'  [script] rejected ({reason}) -> rewriting (try {dup_tries})', flush=True)
         text = generate_script(model=model, topic=topic, style=style,
-                               avoid=avoid + '\nYour previous attempt was too close to an earlier post. Write something entirely new.\n')
+                               avoid=avoid + '\nYour previous attempt was too close to an earlier post or used a banned opening. Write something entirely new.\n')
 
     # record to history (never repeat)
     history.append({'script': text.strip(), 'topic': topic, 'style': style, 'ts': int(time.time())})
