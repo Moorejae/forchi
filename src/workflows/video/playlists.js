@@ -105,6 +105,36 @@ async function findOrCreatePlaylist(token, title, description = "") {
   return created.playlistId;
 }
 
+// ── Playlist-item helpers (for re-sorting existing videos) ──────────────────
+// Find the playlistItem id for a video inside a playlist (null if not present).
+async function findPlaylistItem(token, playlistId, videoId) {
+  let pageToken = "";
+  for (let i = 0; i < 20; i++) {
+    const url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${playlistId}&maxResults=50&pageToken=${pageToken}`;
+    const data = await ytJson(token, url);
+    const hit = (data.items || []).find(
+      (it) => it.snippet && it.snippet.resourceId && it.snippet.resourceId.videoId === videoId
+    );
+    if (hit) return hit.id;
+    pageToken = data.nextPageToken || "";
+    if (!pageToken) break;
+  }
+  return null;
+}
+
+// True if the video is already in the playlist.
+async function isVideoInPlaylist(token, playlistId, videoId) {
+  return !!(await findPlaylistItem(token, playlistId, videoId));
+}
+
+// Remove a video from a playlist by its playlistItem id.
+async function removeFromPlaylist(token, playlistItemId) {
+  await ytJson(token, `https://www.googleapis.com/youtube/v3/playlistItems?id=${playlistItemId}`, {
+    method: "DELETE",
+  });
+  return true;
+}
+
 // Map a script topic -> playlist title -> playlist id (creates it if missing).
 // Returns the playlistId (or null if topic is unknown and no default wanted).
 async function ensureTopicPlaylist(token, topic) {
@@ -119,5 +149,8 @@ module.exports = {
   listPlaylists,
   addVideoToPlaylist,
   findOrCreatePlaylist,
+  findPlaylistItem,
+  isVideoInPlaylist,
+  removeFromPlaylist,
   ensureTopicPlaylist,
 };
