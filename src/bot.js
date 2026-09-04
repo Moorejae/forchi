@@ -477,7 +477,7 @@ bot.on("voice", async (ctx) => {
 
 // ── HTTP Health Check Server ──────────────────────────────────────────────────
 const PORT = process.env.PORT || 7860;
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
   const pathname = (req.url || "/").split("?")[0];
 
   // YouTube OAuth callback: Google redirects here after the owner approves.
@@ -531,6 +531,29 @@ const server = http.createServer((req, res) => {
         res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
         res.end(`<h2 style='font-family:sans-serif'>TikTok authorization failed</h2><p style='font-family:sans-serif'>${err.message}</p>`);
       });
+    return;
+  }
+
+  // TikTok review demo page + API (clean camera-friendly UI for the Content
+  // Posting API review video). Serves the page at /tiktok, status + post APIs.
+  if (pathname === "/tiktok") {
+    const demo = require("./workflows/video/tiktokDemo.js");
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    res.end(demo.PAGE);
+    return;
+  }
+  if (pathname === "/api/tiktok/status") {
+    const demo = require("./workflows/video/tiktokDemo.js");
+    const s = await demo.statusHandler();
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(s));
+    return;
+  }
+  if (pathname === "/api/tiktok/post" && req.method === "POST") {
+    const demo = require("./workflows/video/tiktokDemo.js");
+    const r = await demo.postHandler();
+    res.writeHead(r.ok ? 200 : 400, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(r));
     return;
   }
 
