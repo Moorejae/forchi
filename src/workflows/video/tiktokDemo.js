@@ -135,6 +135,8 @@ function py(args, timeoutMs = 25 * 60 * 1000) {
 }
 
 // Generate a fresh Short and post it ONLY to TikTok (focused Content Posting API demo).
+// Uses a FAST no-voice ~10s clip video (1-2 clips) instead of the full script+voice
+// pipeline, so the demo post is quick and reliable for the review video.
 async function postHandler() {
   const ts = require("./tokenStore.js");
   const hasToken = !!(process.env.TIKTOK_ACCESS_TOKEN || (await ts.getTikTokToken().catch(() => null)));
@@ -142,16 +144,15 @@ async function postHandler() {
   if (process.env.TIKTOK_DISABLED === "true") return { ok: false, message: "TikTok posting is disabled (TIKTOK_DISABLED=true)." };
 
   const name = "ttdemo_" + Math.floor(Date.now() % 1000000);
+  let mp4 = path.join(BASE, "temp_media", name + ".mp4");
   try {
-    // 1. Generate a fresh Short (script -> voice -> clips -> assemble)
-    await py([path.join("tools", "_video_run.py"), "--generate", "--name", name]);
-    const run = JSON.parse(fs.readFileSync(path.join(BASE, "temp_media", name + "_run.json"), "utf8"));
-    const mp4 = run.output;
-    if (!mp4 || !fs.existsSync(mp4)) return { ok: false, message: "video not produced" };
+    // 1. Build a fast no-voice ~10s Short from 1-2 clips (no script/voice needed)
+    await py([path.join("tools", "_video_ttdemo.py"), name]);
+    if (!fs.existsSync(mp4)) return { ok: false, message: "video not produced (check clip library on server)." };
 
     // 2. Post to TikTok via the Content Posting API
     const tiktok = require("./tiktok.js");
-    const title = (run.script || "Victor Moore").trim().slice(0, 80) + " #shorts #poetry";
+    const title = "Victor Moore — a short reflection #shorts #poetry";
     const result = await tiktok.uploadVideo(mp4, { title, description: title });
     return {
       ok: true,
@@ -163,10 +164,10 @@ async function postHandler() {
     return { ok: false, message: String(e.message || e).slice(0, 300) };
   } finally {
     // cleanup the generated artifacts
-    try { if (fs.existsSync(path.join(BASE, "temp_media", name + ".mp4"))) fs.unlinkSync(path.join(BASE, "temp_media", name + ".mp4")); } catch {}
+    try { if (fs.existsSync(mp4)) fs.unlinkSync(mp4); } catch {}
     try { if (fs.existsSync(path.join(BASE, "temp_media", name + ".mp3"))) fs.unlinkSync(path.join(BASE, "temp_media", name + ".mp3")); } catch {}
-    try { if (fs.existsSync(path.join(BASE, "temp_media", name + "_run.json"))) fs.unlinkSync(path.join(BASE, "temp_media", name + "_run.json")); } catch {}
-    try { if (fs.existsSync(path.join(BASE, "temp_media", name + "_parts"))) fs.rmSync(path.join(BASE, "temp_media", name + "_parts"), { recursive: true, force: true }); } catch {}
+    const build = path.join(BASE, "temp_media", name + "_ttbuild");
+    try { if (fs.existsSync(build)) fs.rmSync(build, { recursive: true, force: true }); } catch {}
   }
 }
 
