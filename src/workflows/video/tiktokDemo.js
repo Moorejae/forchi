@@ -150,10 +150,14 @@ async function postHandler() {
     await py([path.join("tools", "_video_ttdemo.py"), name]);
     if (!fs.existsSync(mp4)) return { ok: false, message: "video not produced (check clip library on server)." };
 
-    // 2. Post to TikTok via the Content Posting API
+    // 2. Post to TikTok via the Content Posting API.
+    //    IMPORTANT: the app is unaudited (not yet approved), so TikTok only lets
+    //    it post to a PRIVATE account. We must set privacy SELF_ONLY (not
+    //    PUBLIC_TO_EVERYONE) or TikTok rejects with
+    //    "unaudited_client_can_only_post_to_private_accounts".
     const tiktok = require("./tiktok.js");
     const title = "Victor Moore — a short reflection #shorts #poetry";
-    const result = await tiktok.uploadVideo(mp4, { title, description: title });
+    const result = await tiktok.uploadVideo(mp4, { title, description: title, privacyLevel: "SELF_ONLY" });
     return {
       ok: true,
       message: "Published to TikTok (Content Posting API).",
