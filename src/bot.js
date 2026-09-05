@@ -480,6 +480,18 @@ const PORT = process.env.PORT || 7860;
 const server = http.createServer(async (req, res) => {
   const pathname = (req.url || "/").split("?")[0];
 
+  // TikTok site-verification file: TikTok's developer domain verification fetches
+  // a .txt under the verified host (forchi.myzelva.com) and compares its content
+  // byte-for-byte. The ForChi bot serves this whole domain and otherwise returns
+  // JSON for every path, so answer any /tiktok*.txt path with the raw signature.
+  // Token is env-overridable so future rotations need no code change.
+  if (/^\/tiktok[\w-]*\.txt$/.test(pathname)) {
+    const tok = process.env.TIKTOK_VERIFICATION_TOKEN || "pXe8pUryRg646CoFZ0pb6b8zC9r2naTe";
+    res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end(`tiktok-developers-site-verification=${tok}`);
+    return;
+  }
+
   // YouTube OAuth callback: Google redirects here after the owner approves.
   // We exchange the code, persist the refresh token (locally + as a Render env
   // var so it survives redeploys), and show a success page — one click, no copy-paste.
