@@ -21,15 +21,21 @@ async function svcActive(name) {
 }
 
 // Real snapshot of the VPS services ForChi depends on.
+// USER DIRECTIVE (2026-08-29): the local Qwen LLM is DORMANT by default — it is
+// only reported/required when QWEN_AUTO_START=true. A dormant qwen must never be
+// surfaced as "DOWN" (that caused hourly self-heal churn + notifications).
 async function getVpsHealth() {
   const out = { services: {}, qwenPort: false, disk: "" };
   try {
+    const qwenExpected = (process.env.QWEN_AUTO_START || "").toLowerCase() === "true";
     out.services.forchi = await svcActive("forchi");
-    out.services.qwen = await svcActive("qwen");
     out.services.v61bot = await svcActive("v61-bot");
-    const port = await run("ss -ltn 2>/dev/null | grep -c 8080");
-    const n = Number(port);
-    out.qwenPort = Number.isFinite(n) && n >= 1;
+    if (qwenExpected) {
+      out.services.qwen = await svcActive("qwen");
+      const port = await run("ss -ltn 2>/dev/null | grep -c 8080");
+      const n = Number(port);
+      out.qwenPort = Number.isFinite(n) && n >= 1;
+    }
     out.disk = await run("df -h / | tail -1");
   } catch (e) {
     out.error = e.message;
@@ -42,12 +48,14 @@ async function repairVps() {
   const actions = [];
   try {
     const h = await getVpsHealth();
-    if (h.services && h.services.qwen === false) {
+    const qwenExpected = (process.env.QWEN_AUTO_START || "").toLowerCase() === "true";
+    if (qwenExpected && h.services && h.services.qwen === false) {
       await run("systemctl restart qwen");
       actions.push("local Qwen LLM service was DOWN → restarted (model reloading)");
-    } else {
+    } else if (qwenExpected) {
       actions.push(`local Qwen LLM ${h.qwenPort ? "up (port 8080)" : "service up"}`);
     }
+    // (dormant qwen is intentionally not part of VPS repair)
     if (h.services && h.services.v61bot === false) {
       await run("systemctl restart v61-bot");
       actions.push("v61 prediction bot was DOWN → restarted");

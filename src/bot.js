@@ -102,7 +102,18 @@ db.getDB()
   .then(() => {
     initScheduler();
     jobsScheduler.startJobsScheduler({ bot });
-    videoScheduler.initVideoScheduler({ notify: (t) => jobsNotify.sendMessage(t) });
+    // WORKFLOW-INDEPENDENCE (2026-09-05): on the VPS the Shorts auto-poster runs
+    // in its OWN systemd unit (forchi-shorts.service -> standalone.js) so it never
+    // dies with the bot and never double-posts. When VIDEO_SCHEDULER=standalone the
+    // bot must NOT also register an in-process Shorts timer (it would double-post
+    // once the standalone is healthy). The bot's video COMMANDS still work — they
+    // toggle the shared temp_media/video_mode.json the standalone reads.
+    const videoOwnedByStandalone = (process.env.VIDEO_SCHEDULER || "").toLowerCase() === "standalone";
+    if (!videoOwnedByStandalone) {
+      videoScheduler.initVideoScheduler({ notify: (t) => jobsNotify.sendMessage(t) });
+    } else {
+      console.log("[Scheduler] VIDEO_SCHEDULER=standalone — bot Shorts timer skipped (forchi-shorts.service owns it)");
+    }
     authWatch.startAuthWatch({ notify: (t) => jobsNotify.sendMessage(t) });
     tiktokAuthWatch.startTikTokAuthWatch({ notify: (t) => jobsNotify.sendMessage(t) });
     linkedinAuthWatch.startLinkedInAuthWatch({ notify: (t) => jobsNotify.sendMessage(t) });
@@ -136,17 +147,21 @@ setInterval(async () => {
     const dbBad = typeof snap.db.jobsDb === "string" && snap.db.jobsDb !== "ok";
     const videoBroken = snap.video.enabled && !snap.video.registered;
     const svc = (snap.vps && snap.vps.services) || {};
-    const vpsBroken = svc.qwen === false || svc.v61bot === false;
+    // USER DIRECTIVE (2026-08-29): the local Qwen LLM is DORMANT by default (only
+    // a last-resort fail-safe) — a down qwen is NOT a broken workflow. Only treat
+    // it as broken when the operator explicitly wants it running (QWEN_AUTO_START=true).
+    const qwenExpected = (process.env.QWEN_AUTO_START || "").toLowerCase() === "true";
+    const vpsBroken = (qwenExpected && svc.qwen === false) || svc.v61bot === false;
     const broken = !snap.social.registered || snap.jobs.schedulerRunning === false || dbBad || videoBroken || vpsBroken;
     if (!broken) return;
 
     // Issue signature so repeat occurrences of the SAME issue don't spam.
-    const sig = JSON.stringify([snap.social.registered, snap.jobs.schedulerRunning, dbBad ? snap.db.jobsDb : "ok", videoBroken, svc.qwen === false, svc.v61bot === false]);
+    const sig = JSON.stringify([snap.social.registered, snap.jobs.schedulerRunning, dbBad ? snap.db.jobsDb : "ok", videoBroken, (qwenExpected && svc.qwen === false), svc.v61bot === false]);
     const now = Date.now();
     const cooldownMs = 60 * 60 * 1000; // re-notify same issue at most hourly
     if (lastWatchdogNotify && lastWatchdogNotify.sig === sig && now - lastWatchdogNotify.at < cooldownMs) return;
 
-    console.warn(`[Watchdog] Detected degraded state — repairing (social=${snap.social.registered}, jobs=${snap.jobs.schedulerRunning}, db=${snap.db.jobsDb}, video=${snap.video.registered ? "ok" : videoBroken ? "MISSING" : "off"}, qwen=${svc.qwen === false ? "DOWN" : "ok"}, v61=${svc.v61bot === false ? "DOWN" : "ok"})`);
+    console.warn(`[Watchdog] Detected degraded state — repairing (social=${snap.social.registered}, jobs=${snap.jobs.schedulerRunning}, db=${snap.db.jobsDb}, video=${snap.video.registered ? "ok" : videoBroken ? "MISSING" : "off"}, qwen=${qwenExpected && svc.qwen === false ? "DOWN" : "ok"}, v61=${svc.v61bot === false ? "DOWN" : "ok"})`);
     const actions = await health.repairWorkflows({ bot, notify: (t) => jobsNotify.sendMessage(t) });
     actions.forEach((a) => console.log(`[Watchdog] • ${a}`));
 
@@ -158,12 +173,12 @@ setInterval(async () => {
       after.jobs.schedulerRunning === false ||
       (typeof after.db.jobsDb === "string" && after.db.jobsDb !== "ok") ||
       (after.video.enabled && !after.video.registered) ||
-      asvc.qwen === false ||
+      (qwenExpected && asvc.qwen === false) ||
       asvc.v61bot === false;
 
     const parts = [
       `🩺 *ForChi self-heal* — I detected a problem and tried to fix it automatically.`,
-      `• Found: social=${snap.social.registered ? "ok" : "MISSING"}, jobs=${snap.jobs.schedulerRunning ? "ok" : "NOT RUNNING"}, jobs DB=${dbBad ? snap.db.jobsDb : "ok"}, video=${after.video.enabled && snap.video.registered ? "ok" : "MISSING"}, qwen=${svc.qwen === false ? "DOWN" : "ok"}, v61-bot=${svc.v61bot === false ? "DOWN" : "ok"}`,
+      `• Found: social=${snap.social.registered ? "ok" : "MISSING"}, jobs=${snap.jobs.schedulerRunning ? "ok" : "NOT RUNNING"}, jobs DB=${dbBad ? snap.db.jobsDb : "ok"}, video=${after.video.enabled && snap.video.registered ? "ok" : "MISSING"}, qwen=${qwenExpected && svc.qwen === false ? "DOWN" : "dormant"}, v61-bot=${svc.v61bot === false ? "DOWN" : "ok"}`,
       ...actions.map((a) => `• ${a}`),
     ];
     if (stillBroken) {
@@ -342,6 +357,25 @@ async function handleIncomingText(ctx, text) {
   // Post a video NOW — "post a video now" / "push a video" / "make a short".
   if (/(post|push|make|create)\s+(a\s+)?(video|short|poem)\s*(now|right now|immediately)?/i.test(text)) {
     console.log(`[Video] User ${ctx.from?.id} requested an immediate Short`);
+    const videoOwnedByStandalone = (process.env.VIDEO_SCHEDULER || "").toLowerCase() === "standalone";
+    if (videoOwnedByStandalone) {
+      // The Shorts auto-poster is its own systemd unit (forchi-shorts.service).
+      // Route the manual post through IT (arm nextRunAt=now) so only one process
+      // ever builds/posts Shorts — no bot/standalone race on shared temp files.
+      try {
+        const fs = require("fs");
+        const path = require("path");
+        const BASE = process.env.FORCHI_BASE || path.resolve(__dirname, "..", "..");
+        const MODE = path.join(BASE, "temp_media", "video_mode.json");
+        const m = JSON.parse(fs.readFileSync(MODE, "utf8"));
+        m.enabled = true;
+        m.nextRunAt = Date.now() - 1000; // due immediately; standalone ticks every ~30-60s
+        fs.writeFileSync(MODE, JSON.stringify(m, null, 2));
+        return ctx.reply("🎬 Queued on the Shorts service — it will start building within ~a minute and I'll notify you when it's live.");
+      } catch (e) {
+        return ctx.reply(`⚠️ Couldn't arm the Shorts service: ${e.message}`);
+      }
+    }
     await ctx.reply("🎬 On it — writing, voicing and assembling your Short now (takes a few minutes).");
     videoWorkflow.runOnce({ notify: (t) => jobsNotify.sendMessage(t) })
       .then(async (post) => {

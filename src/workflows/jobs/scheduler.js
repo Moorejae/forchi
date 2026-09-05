@@ -112,13 +112,11 @@ function startJobsScheduler({ bot } = {}) {
 
   timer = setInterval(() => {
     if (!jobsMode.isEnabled()) return;
-    // Global single-workflow lock: skip the scan while a V10 build/publish runs.
-    if (!wlock.tryAcquire("jobs_scan", { ttlMs: 90 * 60 * 1000 })) {
-      const o = wlock.owner();
-      console.warn(`[JobsScheduler] scan SKIPPED — ${o ? o.name + " (pid " + o.owner + ")" : "another workflow"} holds the lock`);
-      return;
-    }
-    try { runSafe(); } finally { wlock.release("jobs_scan"); }
+    // WORKFLOW-INDEPENDENCE (2026-09-05): the jobs scan is network-bound + light
+    // (HTTP discovery + Gemini scoring + optional PDF prep). It must run on its
+    // own cadence regardless of a V10 build, so it does NOT take the global
+    // single-workflow lock. The runSafe() `running` guard prevents overlap.
+    runSafe();
   }, intervalMin * 60000);
 
   // Daily (every-24h) report: 19:00 UTC = 20:00 WAT (8pm Nigerian time).

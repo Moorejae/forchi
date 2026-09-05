@@ -95,12 +95,21 @@ let registered = false;
 let cronTask = null;
 let lastRun = null; // { at, fb: "ok"|"err", li: "ok"|"err", fbError, liError }
 
-// USER DIRECTIVE (2026-09-03): a LinkedIn/Facebook post that is SKIPPED because
-// the global workflow lock is held (e.g. a long V10 build) must NOT be lost for
-// the day. We retry shortly after until the lock frees (up to RETRY_WINDOW_MS),
-// then post. Without this, a V10 build overlapping the 08:00/16:00 UTC slot
-// silently dropped that day's LinkedIn posts.
-const RETRY_WINDOW_MS = 3 * 60 * 60 * 1000; // retry for up to 3h after the slot (covers long V10 builds)
+// WORKFLOW-INDEPENDENCE (2026-09-05): the social workflow is cadence-critical
+// (LinkedIn posts must go out at 08:00/16:00 UTC every day). It therefore does
+// NOT take the global single-workflow lock at all — a long V10 build must never
+// starve or delay a Facebook/LinkedIn post. Social work is light (text + image
+// via remote APIs) and safe to run concurrently with a V10 build; the module's
+// own `running` flag prevents overlapping social posts.
+//
+// Slot preservation: the intended slot (08:00 job-seeking / 16:00 project) and its
+// topic are captured WHEN THE CRON FIRES and threaded through any retry. Before
+// this, a tick that was skipped (e.g. a previous run still in progress) recomputed
+// linkedinSlot() from the wall-clock on retry — once the top of the hour passed it
+// returned null and that day's LinkedIn post was silently dropped (seen on
+// 2026-09-04/05). Now a delayed tick still posts the LinkedIn content it was
+// scheduled for.
+const RETRY_WINDOW_MS = 3 * 60 * 60 * 1000; // retry for up to 3h after the slot (covers any transient busy state)
 const RETRY_DELAY_MS = 5 * 60 * 1000;       // every 5 min
 let retryTimer = null;
 let retryDeadline = 0;
@@ -115,7 +124,7 @@ function scheduleRetry(fn) {
       // Keep retrying until the window expires, then give up (the slot is lost).
       if (res && res.skipped) {
         if (Date.now() < retryDeadline) {
-          console.warn("[Auto] lock still held — retrying again in a few minutes");
+          console.warn("[Auto] still busy — retrying the same slot in a few minutes");
           retryTimer = null;
           scheduleRetry(fn);
         } else {
@@ -146,20 +155,27 @@ function resetRunning() {
   }
 }
 
-// The actual social-posting work (one slot). Returns { posted, skipped }.
-async function runSocialTick() {
+// Build the slot context for NOW (used by the cron callback at schedule time).
+function makeSlot() {
+  const slot = { fbTheme: pickFresh(FB_THEMES, "fb"), liSlot: linkedinSlot() };
+  if (slot.liSlot) {
+    slot.liTopic = pickFresh(
+      slot.liSlot === "job" ? LI_JOB_TOPICS : LI_PROJECT_TOPICS,
+      slot.liSlot === "job" ? "li_job" : "li_project"
+    );
+  }
+  return slot;
+}
+
+// The actual social-posting work (one slot). `slot` carries the themes chosen at
+// schedule time so retries keep the SAME LinkedIn content. Returns { posted, skipped }.
+async function runSocialTick(slot = {}) {
   if (!autoMode.isEnabled()) {
     console.log(`[Auto] Auto mode is OFF — skipping scheduled post at ${new Date().toISOString()}`);
     return { posted: false, skipped: false };
   }
   if (running) {
     console.log("[Auto] Previous run still in progress — skipping this tick.");
-    return { posted: false, skipped: false };
-  }
-  // Global single-workflow lock: don't post while a V10 build/publish runs.
-  if (!wlock.tryAcquire("social", { ttlMs: 20 * 60 * 1000 })) {
-    const o = wlock.owner();
-    console.warn(`[Auto] SKIPPED social post — ${o ? o.name + " (pid " + o.owner + ")" : "another workflow"} holds the lock`);
     return { posted: false, skipped: true };
   }
   running = true;
@@ -168,11 +184,11 @@ async function runSocialTick() {
     // across the (now much larger) pools — never the same sequence two days in a row.
     // Fresh topic per platform (persisted, no day-to-day repeats).
     // LinkedIn posts at BOTH slots: 08:00 = job-seeking, 16:00 = project showcase.
-    const fbTheme = pickFresh(FB_THEMES, "fb");
-    const liSlot = linkedinSlot();
-    const liTopic = liSlot
+    const fbTheme = slot.fbTheme || pickFresh(FB_THEMES, "fb");
+    const liSlot = slot.liSlot != null ? slot.liSlot : linkedinSlot();
+    const liTopic = slot.liTopic || (liSlot
       ? pickFresh(liSlot === "job" ? LI_JOB_TOPICS : LI_PROJECT_TOPICS, liSlot === "job" ? "li_job" : "li_project")
-      : null;
+      : null);
 
     console.log(`[Auto] ${new Date().toISOString()} — generating posts (FB: "${fbTheme}" | LI: ${liSlot ? `"${liTopic}" (${liSlot === "job" ? "job-seeking" : "project showcase"})` : "SKIPPED"})`);
 
@@ -214,7 +230,6 @@ async function runSocialTick() {
     return { posted: false, skipped: false };
   } finally {
     running = false;
-    wlock.release("social");
   }
 }
 
@@ -228,12 +243,13 @@ console.log(`[Scheduler] Initializing AUTO mode (FB 2/day 8:00+16:00 UTC · LI 2
   cronTask = cron.schedule(
     AUTO_SCHEDULE,
     async () => {
-      const res = await runSocialTick();
-      // If the lock was held (V10 build running), retry shortly after so the
-      // day's LinkedIn/Facebook post is NOT lost.
+      // Capture the intended slot at schedule time — a delayed/retried tick keeps
+      // this same LinkedIn job/project content instead of dropping it.
+      const slot = makeSlot();
+      const res = await runSocialTick(slot);
       if (res && res.skipped) {
-        console.warn("[Auto] post skipped due to lock — will retry in a few minutes");
-        scheduleRetry(runSocialTick);
+        console.warn("[Auto] tick skipped — will retry the same slot in a few minutes");
+        scheduleRetry(() => runSocialTick(slot));
       }
     },
     { scheduled: true, timezone: "UTC" }

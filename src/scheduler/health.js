@@ -26,6 +26,30 @@ const vps = require("./vps"); // REAL VPS service health + repair
 
 const bootTime = Date.now();
 
+// WORKFLOW-INDEPENDENCE (2026-09-05): on the VPS the Shorts auto-poster is owned
+// by its own systemd unit (forchi-shorts.service -> standalone.js), NOT by the bot.
+// The standalone persists its next run to temp_media/video_mode.json, so health can
+// treat the workflow as "registered/active" when the standalone owns it and has a
+// live schedule — instead of reporting the bot's (absent) in-process scheduler as
+// a MISSING/broken workflow and churning repairs every hour.
+function standaloneOwnsVideo() {
+  return (process.env.VIDEO_SCHEDULER || "").toLowerCase() === "standalone";
+}
+function standaloneVideoActive() {
+  try {
+    const fs = require("fs");
+    const path = require("path");
+    const BASE = process.env.FORCHI_BASE || path.resolve(__dirname, "..", "..", "..");
+    const m = JSON.parse(fs.readFileSync(path.join(BASE, "temp_media", "video_mode.json"), "utf8"));
+    if (!m.enabled) return false;
+    // The standalone writes nextRunAt whenever it schedules (every 6-10h). Active
+    // = it has a future run planned OR it scheduled one recently (past ~14h covers
+    // the max gap + a failed-build retry window).
+    if (!m.nextRunAt) return false;
+    return m.nextRunAt > Date.now() - 14 * 60 * 60 * 1000;
+  } catch { return false; }
+}
+
 // ── Health snapshot ─────────────────────────────────────────────────────────
 async function getHealthSnapshot() {
   const social = socialScheduler.getSchedulerState();
@@ -45,7 +69,8 @@ async function getHealthSnapshot() {
     },
     video: {
       enabled: videoWorkflow.getVideoState().enabled,
-      registered: videoScheduler.getSchedulerState().registered,
+      registered: standaloneOwnsVideo() ? standaloneVideoActive() : videoScheduler.getSchedulerState().registered,
+      owner: standaloneOwnsVideo() ? "standalone" : "bot",
       lastPost: videoWorkflow.getVideoState().lastPost,
       lastError: videoWorkflow.getVideoState().lastError,
       nextScheduled: videoWorkflow.getVideoState().nextScheduled,
@@ -103,13 +128,20 @@ async function repairWorkflows({ bot, notify } = {}) {
   jobsScheduler.startJobsScheduler({ bot });
   actions.push("jobs scheduler restarted");
 
-  // 3b. Video workflow: re-enable + re-register its jitter scheduler.
+  // 3b. Video workflow: re-enable + re-register its jitter scheduler. In standalone
+  // ownership mode (forchi-shorts.service) the bot has no in-process timer to
+  // re-register — the standalone heals itself via systemd Restart=always, so we
+  // only verify the mode file is enabled.
   if (!videoWorkflow.getVideoState().enabled) {
     videoWorkflow.setEnabled(true);
     actions.push("video workflow was OFF → turned back ON");
   }
-  videoScheduler.reRegister({ notify });
-  actions.push("video scheduler re-registered");
+  if (standaloneOwnsVideo()) {
+    actions.push(`video workflow owned by standalone (${standaloneVideoActive() ? "schedule active ✅" : "no live schedule — forchi-shorts.service will reschedule"})`);
+  } else {
+    videoScheduler.reRegister({ notify });
+    actions.push("video scheduler re-registered");
+  }
 
   // 4. Jobs DB: force a reconnect-aware health check.
   try {
@@ -151,8 +183,9 @@ function registerHealthCommands(bot) {
     ];
     const vpsSnap = snap.vps || {};
     const svc = vpsSnap.services || {};
+    const qwenExpected = (process.env.QWEN_AUTO_START || "").toLowerCase() === "true";
     lines.push(
-      `VPS services: forchi ${svc.forchi === undefined ? "?" : svc.forchi ? "✅" : "⛔"} · qwen ${svc.qwen === undefined ? "?" : svc.qwen ? "✅" : "⛔"}${vpsSnap.qwenPort ? " (port 8080)" : ""} · v61-bot ${svc.v61bot === undefined ? "?" : svc.v61bot ? "✅" : "⛔"}`
+      `VPS services: forchi ${svc.forchi === undefined ? "?" : svc.forchi ? "✅" : "⛔"} · qwen ${svc.qwen === undefined ? (qwenExpected ? "MISSING ⛔" : "dormant (by design)") : svc.qwen ? "✅" : "⛔"}${vpsSnap.qwenPort ? " (port 8080)" : ""} · v61-bot ${svc.v61bot === undefined ? "?" : svc.v61bot ? "✅" : "⛔"}`
     );
     if (snap.jobs.totalJobs != null) lines.push(`Jobs totals: seen ${snap.jobs.totalJobs} · applied ${snap.jobs.applied} · queued ${snap.jobs.pendingApply}`);
     lines.push(`\nSay "fix the workflows" (or /fix) if anything looks broken.`);

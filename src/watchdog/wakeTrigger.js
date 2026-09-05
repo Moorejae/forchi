@@ -82,6 +82,38 @@ function servicesDown() {
 
 // HF spaces health — the remote image-gen + voice backends. Uses the HF runtime
 // API (stage field), which is honest about sleep/error/paused states.
+// SELF-HEAL (2026-09-05): the Higgs voice space (slymun/higgs-tts3) is the Shorts
+// voice PRIMARY. When it goes PAUSED/ERROR the standalone only discovers it after
+// a 15-min timeout per attempt — shorts silently stop for hours. So wakeTrigger
+// auto-restarts Higgs when it is stopped (deduped, so we don't hammer the API).
+async function restartHiggsIfDown() {
+  const state = readState();
+  state.higgsRestart = state.higgsRestart || {};
+  const last = state.higgsRestart.at || 0;
+  if (now() - last < 30 * 60 * 1000) return null; // at most one restart/30min
+  try {
+    const token = env("HF_ACCESS_TOKEN") || env("HF_TOKEN");
+    if (!token) return null;
+    const r = await fetch(`https://huggingface.co/api/spaces/slymun/higgs-tts3/runtime`, { signal: AbortSignal.timeout(12000) });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const stage = (j.stage || "").toUpperCase();
+    const BAD = new Set(["ERROR", "PAUSED", "DELETED", "APP_DELETED"]);
+    if (!BAD.has(stage)) return null;
+    const rr = await fetch(`https://huggingface.co/api/spaces/slymun/higgs-tts3/restart`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(60000),
+    });
+    state.higgsRestart = { at: now(), stage };
+    writeState(state);
+    console.log(`[wake] Higgs space was ${stage} — restart requested (HTTP ${rr.status})`);
+    return `Higgs voice space was ${stage} — auto-restarted`;
+  } catch (e) {
+    return null;
+  }
+}
+
 async function checkHFSpaces() {
   const spaces = [
     { name: "slymun/forchi-img", label: "HF image gen" },
@@ -204,6 +236,10 @@ async function runChecks() {
   if (stuck) problems.push(stuck);
   for (const p of checkLastPosts()) problems.push(p);
   for (const p of checkV10Pipeline()) problems.push(p);
+  // Auto-heal the Higgs voice space BEFORE reporting so a transient PAUSED does
+  // not generate an alert (the restart is logged if it happens).
+  const healed = await restartHiggsIfDown();
+  if (healed) console.log("[wake] auto-heal:", healed);
   for (const p of await checkHFSpaces()) problems.push(p);
   for (const p of await checkSocialFreshness()) problems.push(p);
   return problems;

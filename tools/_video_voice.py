@@ -162,11 +162,41 @@ def _token():
     raise SystemExit('HF_ACCESS_TOKEN not found')
 
 
+class HiggsUnavailable(Exception):
+    """Raised when the Higgs space cannot be brought ready after self-heal attempts."""
+
+
+def _space_runtime():
+    """Return {'stage','dom'} for the Higgs space runtime (uppercased), or None."""
+    import json as _json
+    import urllib.request
+    try:
+        r = urllib.request.urlopen(f'https://huggingface.co/api/spaces/{HIGGS_SPACE}', timeout=30)
+        d = _json.load(r)
+        rt = d.get('runtime') or {}
+        return {
+            'stage': (rt.get('stage') or '').upper(),
+            'dom': ((rt.get('domains') or [{}])[0].get('stage') or '').upper(),
+        }
+    except Exception:
+        return None
+
+
 def get_client(timeout_min=15):
     t = _token()
     c = None
     start = time.time()
+    restart_attempted = False
     while time.time() - start < timeout_min * 60:
+        rt = _space_runtime()
+        # SELF-HEAL (2026-09-05): a PAUSED/ERROR/SLEEP ZeroGPU space never becomes
+        # ready on its own — gradio Client() just times out (the "higgs space not
+        # ready" outage). Restart it once at the start and wait for READY.
+        if rt and rt['stage'] in ('PAUSED', 'ERROR', 'SLEEP') and not restart_attempted:
+            print(f'  [higgs] space stage={rt["stage"]} -> restarting (self-heal)', flush=True)
+            restart_space()
+            restart_attempted = True
+            continue
         try:
             c = Client(HIGGS_SPACE, headers={'Authorization': f'Bearer {t}'})
             c.view_api()
@@ -175,7 +205,7 @@ def get_client(timeout_min=15):
         except Exception as e:
             print(f'  [higgs] waiting: {str(e)[:60]}', flush=True)
             time.sleep(20)
-    raise SystemExit('higgs space not ready')
+    raise HiggsUnavailable('higgs space not ready')
 
 
 def restart_space(timeout_min=8):
@@ -328,7 +358,16 @@ def render_script(text, out_dir, mode='clean', client=None, resume=True,
     phrases = split_phrases(text, max_len=max_len)
     print(f'  [higgs] {len(phrases)} phrases', flush=True)
     if client is None:
-        client = get_client()
+        try:
+            client = get_client()
+        except HiggsUnavailable as e:
+            # SELF-HEAL (2026-09-05): Higgs could not be brought ready (space PAUSED /
+            # restart failed). Fall back to the Contabo CPU worker (the designated
+            # backup) so the Short still posts instead of failing outright.
+            print(f'  [higgs] {e} — falling back to Contabo CPU worker (backup)', flush=True)
+            if contabo_available():
+                return render_contabo(text, out_dir, mode=mode, seed=seed, max_len=max_len)
+            raise
     space_restarted = False
 
     results = []
@@ -355,7 +394,11 @@ def render_script(text, out_dir, mode='clean', client=None, resume=True,
             if not ok and not space_restarted:
                 print('  [higgs] all attempts failed -> triggering space self-heal', flush=True)
                 restart_space()
-                client = get_client(timeout_min=8)
+                try:
+                    client = get_client(timeout_min=8)
+                except HiggsUnavailable as e:
+                    print(f'  [higgs] {e} — giving up on Higgs for this script', flush=True)
+                    raise SystemExit('higgs space not ready (all self-heal attempts failed)')
                 space_restarted = True
                 for attempt in range(4):
                     try:

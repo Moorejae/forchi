@@ -61,6 +61,11 @@ async function refreshAccess() {
 // (env vars only), so we must never throw here — the caller persists to Render
 // env vars separately, and recordAuth keeps the 7-day re-auth clock.
 async function saveRefreshToken(token) {
+  // FIX (2026-09-05): tokenStore.getToken() prefers process.env.YOUTUBE_REFRESH_TOKEN,
+  // which dotenv froze at boot. Without updating it here, a fresh OAuth consent would
+  // persist to .env + DB kv but the RUNNING process would keep using the stale
+  // (expired) token until a restart. Set it in-memory so uploads work immediately.
+  process.env.YOUTUBE_REFRESH_TOKEN = token;
   try {
     const envPath = path.join(__dirname, "..", "..", "..", ".env");
     let env = "";

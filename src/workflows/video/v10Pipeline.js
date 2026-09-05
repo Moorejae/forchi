@@ -313,7 +313,11 @@ async function runOnce({ runId, theme, dryRun = false, buildOnly = false, notify
           const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
           // USER DIRECTIVE (2026-08-31): thumbnail carries the same curiosity-gap
           // "WHY" hook as the title — makes people want to click.
-          const hookTitle = v10.buildV10CuriosityTitle(meta.title, meta);
+          // (FIX 2026-09-05: this stage referenced an undefined `v10` — it must use
+          // v10Metadata.js exactly like the assemble/upload stages do. Every build
+          // died here with "v10 is not defined" and shipped without a thumbnail.)
+          const v10m = require("./v10Metadata.js");
+          const hookTitle = v10m.buildV10CuriosityTitle(meta.title, meta);
           py(["tools/_v10_thumbnail.py", mp4, "--title", hookTitle.slice(0, 60), "--out", thumb, "--at", "30"]);
         } else if (stage === "upload") {
           if (dryRun || buildOnly) {
