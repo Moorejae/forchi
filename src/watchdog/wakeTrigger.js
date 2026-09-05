@@ -83,35 +83,40 @@ function servicesDown() {
 // HF spaces health — the remote image-gen + voice backends. Uses the HF runtime
 // API (stage field), which is honest about sleep/error/paused states.
 // SELF-HEAL (2026-09-05): the Higgs voice space (slymun/higgs-tts3) is the Shorts
-// voice PRIMARY. When it goes PAUSED/ERROR the standalone only discovers it after
-// a 15-min timeout per attempt — shorts silently stop for hours. So wakeTrigger
-// auto-restarts Higgs when it is stopped (deduped, so we don't hammer the API).
-async function restartHiggsIfDown() {
+// voice PRIMARY and slymun/forchi-img is the social-image fallback. When either is
+// PAUSED/ERROR the standalone only discovers it after a 15-min timeout per attempt
+// — shorts silently stop for hours. So wakeTrigger auto-restarts them (deduped, so
+// we don't hammer the HF API).
+const AUTO_RESTART_SPACES = [
+  { name: "slymun/higgs-tts3", label: "Higgs voice" },
+  { name: "slymun/forchi-img", label: "image gen" },
+];
+async function restartHfIfDown() {
   const state = readState();
-  state.higgsRestart = state.higgsRestart || {};
-  const last = state.higgsRestart.at || 0;
-  if (now() - last < 30 * 60 * 1000) return null; // at most one restart/30min
-  try {
-    const token = env("HF_ACCESS_TOKEN") || env("HF_TOKEN");
-    if (!token) return null;
-    const r = await fetch(`https://huggingface.co/api/spaces/slymun/higgs-tts3/runtime`, { signal: AbortSignal.timeout(12000) });
-    if (!r.ok) return null;
-    const j = await r.json();
-    const stage = (j.stage || "").toUpperCase();
-    const BAD = new Set(["ERROR", "PAUSED", "DELETED", "APP_DELETED"]);
-    if (!BAD.has(stage)) return null;
-    const rr = await fetch(`https://huggingface.co/api/spaces/slymun/higgs-tts3/restart`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(60000),
-    });
-    state.higgsRestart = { at: now(), stage };
-    writeState(state);
-    console.log(`[wake] Higgs space was ${stage} — restart requested (HTTP ${rr.status})`);
-    return `Higgs voice space was ${stage} — auto-restarted`;
-  } catch (e) {
-    return null;
+  state.hfRestart = state.hfRestart || {};
+  for (const sp of AUTO_RESTART_SPACES) {
+    const key = sp.name;
+    const last = state.hfRestart[key] || 0;
+    if (now() - last < 30 * 60 * 1000) continue; // at most one restart/30min per space
+    try {
+      const token = env("HF_ACCESS_TOKEN") || env("HF_TOKEN");
+      if (!token) continue;
+      const r = await fetch(`https://huggingface.co/api/spaces/${key}/runtime`, { signal: AbortSignal.timeout(12000) });
+      if (!r.ok) continue;
+      const j = await r.json();
+      const stage = (j.stage || "").toUpperCase();
+      const BAD = new Set(["ERROR", "PAUSED", "DELETED", "APP_DELETED"]);
+      if (!BAD.has(stage)) continue;
+      const rr = await fetch(`https://huggingface.co/api/spaces/${key}/restart`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(60000),
+      });
+      state.hfRestart[key] = now();
+      console.log(`[wake] ${sp.label} space (${key}) was ${stage} — restart requested (HTTP ${rr.status})`);
+    } catch (e) { /* next tick will retry */ }
   }
+  writeState(state);
 }
 
 async function checkHFSpaces() {
@@ -236,10 +241,9 @@ async function runChecks() {
   if (stuck) problems.push(stuck);
   for (const p of checkLastPosts()) problems.push(p);
   for (const p of checkV10Pipeline()) problems.push(p);
-  // Auto-heal the Higgs voice space BEFORE reporting so a transient PAUSED does
-  // not generate an alert (the restart is logged if it happens).
-  const healed = await restartHiggsIfDown();
-  if (healed) console.log("[wake] auto-heal:", healed);
+  // Auto-heal the HF voice/image spaces BEFORE reporting so a transient PAUSED
+  // does not generate an alert (the restart is logged if it happens).
+  await restartHfIfDown();
   for (const p of await checkHFSpaces()) problems.push(p);
   for (const p of await checkSocialFreshness()) problems.push(p);
   return problems;
