@@ -28,6 +28,28 @@ const SCRIPTS_DIR = path.join(BASE, "temp_media", "v10_run");
 const TMIN = parseInt(process.env.V10_TARGET_MINUTES || "5", 10);
 const countWords = (scs) => (scs || []).reduce((a, s) => a + ((s.narration || "").split(/\s+/).filter(Boolean).length), 0);
 
+// Spoken-text hygiene (2026-09-05): strip ANY bracket marker / emoji / stage
+// direction that leaks into narration. Every word is voiced AND burned onto the
+// screen, so the text must be clean prose only.
+function cleanSpoken(s) {
+  return String(s || "")
+    .replace(/\[[^\]]*\]/g, " ")
+    .replace(/[🤭😀😊😂🎬▶🎵✨⚠📌💬]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+function sanitizeData(data) {
+  if (!data) return data;
+  if (Array.isArray(data.scenes)) {
+    for (const sc of data.scenes) {
+      if (sc && typeof sc.narration === "string") sc.narration = cleanSpoken(sc.narration);
+    }
+  }
+  if (typeof data.script === "string") data.script = cleanSpoken(data.script);
+  if (typeof data.title === "string") data.title = cleanSpoken(data.title);
+  return data;
+}
+
 // THEME CATEGORIES — one per V10 YouTube playlist (user spec 2026-08-30).
 // Rotation is ROUND-ROBIN across the 5 categories so every video lands in a
 // different playlist in turn. Each category's themes clearly belong to it so the
@@ -116,12 +138,13 @@ function pickTheme(state) {
 // Expand ONLY the narrations to reach a target word count (keeps scenes/structure intact).
 async function expandScript(scenes, targetWords) {
   const cur = (scenes || []).map((s) => ({ n: s.n, narration: s.narration || "" }));
-  const prompt = `You are expanding scene narrations for a storybook video. The total is currently too short; we
+  const prompt = `You are expanding scene narrations for a documentary-style story video. The total is currently too short; we
 need about ${targetWords} words across ${cur.length} scenes. Keep each scene's story beat and scene identity
 IDENTICAL, but expand each "narration" (2-4 sentences -> more vivid detail, psychology, sensory language,
-wry family-safe asides, grounded historical context). Do NOT repeat sentences word-for-word. Return STRICT
-JSON ONLY: {"narration": ["<expanded narration scene 1>", ...]} — one expanded narration string per scene,
-in order, matching this current list:
+fast energetic pacing that keeps forward momentum, grounded historical context). Apply the SAME word hygiene as
+the main script: NO markers, NO emoji, NO forced humor, do NOT repeat distinctive words, and never repeat
+sentences word-for-word. Return STRICT JSON ONLY: {"narration": ["<expanded narration scene 1>", ...]} — one
+expanded narration string per scene, in order, matching this current list:
 ${JSON.stringify(cur, null, 1)}`;
   try {
     const data = await callGemini(prompt);
@@ -231,13 +254,29 @@ ${researchText}
 
 STORY SELECTION RULE (the channel's identity — CRITICAL): Most storytelling channels repeat the same handful of over-told stories (Trojan Horse, David vs Goliath, King Midas, Icarus, The Boy Who Cried Wolf, Cinderella, Robin Hood, Noah's Ark, Pandora's Box, The Prodigal Son, The Tortoise and the Hare, etc.). THIS CHANNEL IS DIFFERENT: it tells UNTOLD stories — obscure folklore, legends, and historical episodes from African, European, Asian, and Middle-Eastern traditions that people have rarely or never heard. Pick ONE genuinely lesser-known story from the research (or from a real obscure tradition you know) and tell it in our unique voice with the psychological angle. If the research only surfaces famous stories, dig for the obscure corner of that same tradition instead of defaulting to a classic. The viewer should think "I've never heard this one before" — that is the channel's edge. We have millions of stories to tell.
 
-HUMOR REQUIREMENT (important): This channel makes viewers SMILE, not just learn. Weave in 3-5 light, warm, family-safe moments of humor scattered through the script — a witty aside, a gentle irony, a relatable modern parallel ("basically the ancient version of X"), a dry one-liner about human nature, or a playful observation about the characters' absurdity. Humor must feel ORGANIC (rise naturally from the story/psychology), NEVER forced jokes or punchliney gags, and must never undercut the seriousness of a genuine emotional/ethical moment. Children AND adults should both catch the smile. Mark each humor beat with [🤭 HUMOR] right before the line that lands it.
+TONE & WIT (2026-09-05 directive — replaces the old forced-humor rule): Warmth, NOT jokes. The tone is an enthusiastic, curious storyteller — never a stand-up comic, never a monotone lecturer. A light, organic smile may surface AT MOST once or twice in a whole video, and ONLY when the story itself makes it natural (a dry observation, a gently wry aside about human nature). NEVER force a joke, never add a pun for its own sake, never write meta-commentary about the story or the video, and never put a gag right after a serious or emotional moment. Absolutely NO bracket markers, NO "[🤭 HUMOR]", NO stage directions, NO emoji anywhere in the narration — every word is spoken aloud and burned onto the screen, so the text must read clean top to bottom.
 
 FORBIDDEN PHRASES (HARD RULES — the channel NEVER uses these, ever): "watch till the end", "stick around to find out", "stay until the end", "make sure you stay", "don't go anywhere", "before we begin", "let's dive in", "thanks for watching", "like and subscribe", "see you next time", "hit that subscribe button". Do NOT instruct the audience to do ANYTHING with their time or attention. The hook works by opening a curiosity GAP that the story then closes — the viewer is pulled forward by the gap, never told to stay.
 
 STRUCTURE (mandatory): The video ALWAYS opens with a NARRATOR COLD-OPEN scene (scene 1) that opens a curiosity GAP WITHOUT instructing the viewer to stay: the narrator states a specific, surprising, high-stakes claim or asks a concrete WHY/HOW question that implies a mechanism or answer coming later, then IMMEDIATELY drops into the story's pivotal moment. The open loop pulls the viewer forward on its own — never say "stay to the end". The close (last scene) has the narrator answer the opening question/claim, which is what closes the loop.
 
-Write a ~${TMIN} minute script (about ${N_WORDS_LO}-${N_WORDS_HI} words, slow deliberate narration ~130 wpm) in the 4-act structure, paced by a 5-BEAT RETENTION ARC (each act carries its beat):
+WRITING VOICE & PACING (2026-09-05 directive — the channel's new documentary DNA, modeled on high-retention explainer storytelling):
+- ENERGETIC + conversational: an enthusiastic, smart friend who happens to be a history/folklore nerd — never a monotone lecturer, never overwrought.
+- FAST, relentless forward momentum: aim ~185-195 words per minute of spoken narration with almost NO dead air. Sentences are short-to-medium and FLOW into one another. If a beat starts to stall, cut straight to its consequence.
+- CAUSE-AND-EFFECT CHAINS: show that nothing happened in isolation — every event caused the next (a shift in the world -> weaker monsoons -> less rain -> more dust -> fewer people -> a great migration). Link beats with consequence phrasing, but VARY the connectors so it never sounds like a template.
+- PENDULUM CONTRASTS: keep the viewer off-balance by swinging between extremes (the mundane vs the unbelievable, scarcity vs abundance, triumph vs collapse).
+- RELATABLE SCALE: give every number or size a mind-bending comparison the viewer can feel ("less than one person per square mile — over 90 times emptier than the United States").
+- TEMPORAL SIGNPOSTING with VARIETY: when jumping across time, open fresh each time ("Now...", "And not so long ago...", "What is fascinating though is that...", "Yet like everything where there is a push..."). NEVER open two consecutive paragraphs the same way.
+- MYSTERY LOOP: withhold the full reveal; hint there is more coming, then close the loop at the end.
+
+WORD & REPETITION HYGIENE (HARD RULES, 2026-09-05):
+- Do NOT repeat a distinctive word within ~120 words of itself (names, and theme words like "secret", "grace", "betrayal", "lesson", "journey", "truth", "power", "humor", "heart", "fate") — vary your vocabulary aggressively.
+- Banned crutches (use at most once per script, ideally never): "basically", "essentially", "literally", "in other words", "so to speak", "of their own making", "understandably", "it turns out", "as if", "kind of", "the [era] version of [modern thing]".
+- Vary every sentence opener — never start three sentences in a row with the same word.
+- At most ONE direct rhetorical question to the viewer in the entire script (the cold-open hook may be it); otherwise imply the question with a statement.
+- No [markers], no emoji, no "🤭", no "[HUMOR]", no ALL-CAPS stage directions anywhere in the text.
+
+Write a ~${TMIN} minute script (about ${N_WORDS_LO}-${N_WORDS_HI} words, FAST energetic narration ~185-195 wpm) in the 4-act structure, paced by a 5-BEAT RETENTION ARC (each act carries its beat):
 ACT I HOOK & COLD OPEN (0:00-${act1e}) — narrator cold-open question + drop into the pivotal moment. Build the hook as a HIGH-STAKES CONTRAST: (1) a mundane baseline the viewer relates to, (2) an extreme high-stakes contrast, (3) a shock anomaly (a number, absurd odds, an unbelievable fact), (4) a talent debunk (the protagonist was NOT a born genius), (5) a concrete implication the viewer now WANTS resolved ("the answer changes how you'll see every [X] from now on") — a promise of the answer WITHOUT telling them to stay.
 ACT II CONTEXT/DESIRE/ESCALATION (${act1e}-${act2e}) — the world, desires, fatal flaw, decisions. Then SHATTER THE INTUITION: introduce the psychological/behavioral principle the story proves, explain why conventional wisdom gets it wrong, and anchor ONE sticky visual metaphor.
 ACT III CLIMAX (${act2e}-${act3e}) — turning point, downfall/redemption. Deconstruct the mechanism: break the protagonist's flaw or the story's engine into ~3 atomic principles, each tied to a scene beat.
@@ -272,6 +311,7 @@ async function generate({ theme, outDir }) {
   const researchText = await research(useTheme);
   console.log(`[v10script] research: ${researchText.length} chars`);
   let data = await callGemini(buildPrompt(useTheme, researchText));
+  data = sanitizeData(data); // defensive: kill any leaked [markers]/emoji before voice+captions
   console.log(`[v10script] got ${(data.scenes || []).length} scenes, title="${data.title}"`);
 
   // ENFORCE TARGET LENGTH — Gemini under-writes the word target (a "5 min" script came

@@ -18,7 +18,13 @@ PITCH = "-10Hz"  # lighter per user: less heavy than -20Hz
 # speed_slow only — USER-PICKED (2026-08-27) over the V10 Narrator (whispery) and the
 # deep clone. Full voice, less whisper, established ForChi persona.
 HIGGS_VOICE = "Victor Moore (clean)"
-HIGGS_TOKENS = "<|prosody:speed_slow|>"   # NO pitch_low (that's what made it robotic-deep)
+# PACING CHANGE (2026-09-05, user directive): the V10 voice "paused a lot" because
+# <|prosody:speed_slow|> inserted long dramatic dead air. A/B measured on the live
+# voice: speed_slow => ~167 wpm with ~30% silence; NO token => ~170 wpm; the real
+# win is silence tightening in _v10_tighten_voice.py (0.45s -> 0.20s). We now use NO
+# prosody token (keeps the approved "perfect" timbre, natural ~185-195 wpm after
+# tightening) — matching the energetic documentary pacing the scripts target.
+HIGGS_TOKENS = ""   # was "<|prosody:speed_slow|>" — removed 2026-09-05
 HIGGS_SEED = 7  # varied from 1234 (1234 carried the r01 pitch-ramp latent artifact)
 # USER DIRECTIVE (2026-09-01): 4096 max audio tokens truncated long scenes mid-
 # sentence (the "last sentences missing" bug). 8192 lets a full scene render.

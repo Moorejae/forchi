@@ -36,7 +36,10 @@ for i in range(1, 22):
     if not os.path.exists(p): continue
     d0 = dur(p); sf = silence_frac(p)
     before_tot += d0
-    tighten_silences(p, max_sil=0.45, lead=0.05, tail=0.10)
+    # PACING CHANGE (2026-09-05, user directive): was max_sil=0.45 (too much dead
+    # air -> "the voice pauses a lot"). 0.20 keeps natural micro-pauses while
+    # removing the audible sentence gaps -> ~185-195 wpm energetic documentary flow.
+    tighten_silences(p, max_sil=0.20, lead=0.02, tail=0.05)
     d1 = dur(p); after_tot += d1
     print(f"r{i:02d}: {d0:.1f}s silence%={sf:.0%} -> {d1:.1f}s")
 print(f"TOTAL: {before_tot:.1f}s -> {after_tot:.1f}s")
