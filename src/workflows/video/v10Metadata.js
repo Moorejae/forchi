@@ -42,6 +42,10 @@ function buildChapters(timeline) {
 }
 
 // title = "<base> #t1 #t2 #t3"  (exactly 3 hashtags, thematic — NO #shorts)
+// YouTube caps titles at 100 chars — a long curiosity hook + long tags can exceed
+// that and the upload is rejected with HTTP 400 "invalid or empty video title".
+// We trim the BASE (never the hashtags) down to a word boundary so the final title
+// always fits, keeping the curiosity hook readable.
 function buildV10Title(baseTitle, rng, forcedTags) {
   const r = rng || makeRng(null);
   const used = [];
@@ -49,7 +53,19 @@ function buildV10Title(baseTitle, rng, forcedTags) {
   const t1 = pick(0); used.push(t1);
   const t2 = pick(1); used.push(t2);
   const t3 = pick(2);
-  return `${baseTitle} #${t1} #${t2} #${t3}`;
+  const tagsPart = `#${t1} #${t2} #${t3}`;
+  const MAX_TITLE = 100;
+  let base = String(baseTitle || "").replace(/\s+/g, " ").trim();
+  const maxBase = Math.max(15, MAX_TITLE - tagsPart.length - 1);
+  if (base.length > maxBase) {
+    let cut = base.slice(0, maxBase - 1).trim();
+    const sp = cut.lastIndexOf(" ");
+    if (sp >= Math.floor(maxBase / 2)) cut = cut.slice(0, sp).trim();
+    base = (cut || base.slice(0, maxBase - 1)) + "…";
+  }
+  const title = `${base} ${tagsPart}`.trim();
+  // Final safety net: never exceed 100 chars no matter what the tags contain.
+  return title.length <= MAX_TITLE ? title : title.slice(0, MAX_TITLE - 1).trim() + "…";
 }
 
 // ── CURIOSITY-GAP "WHY" TITLES (user directive 2026-08-31) ───────────────────
