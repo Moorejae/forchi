@@ -287,11 +287,10 @@ async function runOnce({ runId, theme, dryRun = false, buildOnly = false, notify
           }
           console.log(`[v10] images: ${files.length} frames present (${needShots} shots required)`);
         } else if (stage === "assemble") {
-          // USER DIRECTIVE (2026-09-01/09-06): burn kinetic captions INTO the video.
-          // The on-screen WHY-hook text was removed 2026-09-06 (user: stray words were
-          // "littered all over the screen") — captions are the ONLY overlay now.
+          // 2026-09-06 (user): burned-in kinetic captions kept glitching across
+          // attempts — subtitles removed ENTIRELY (clean video, no on-screen text).
           const dlArg = process.platform === "win32" ? ["--to-downloads"] : [];
-          py(["tools/_v10_repl_assemble.py", "v10_" + rid, "--manifest", manifestPath, "--images", imagesDir, "--wavs", voiceDir, "--subtitles", "--no-kenburns", ...dlArg, "--sfx"]);
+          py(["tools/_v10_repl_assemble.py", "v10_" + rid, "--manifest", manifestPath, "--images", imagesDir, "--wavs", voiceDir, "--no-kenburns", ...dlArg, "--sfx"]);
           if (!fs.existsSync(mp4) || fs.statSync(mp4).size < 500000) throw new Error("assemble output missing/too small");
           // TRUNCATION GUARD (2026-09-01): the video must not be shorter than the
           // narration (dropped final scene = missing last sentences). Compare the
