@@ -500,13 +500,15 @@ def assemble(manifest_path, images_dir, wavs_dir, out_name, to_downloads=True, c
                 pf = f"p_{tfile_i}.txt"; tfile_i += 1
                 with open(os.path.join(work, pf), "w", encoding="utf-8") as f:
                     f.write(prefix_text)
+                # 2026-09-06 (user): the pop/alpha animation made captions GLITCH —
+                # removed. Words now appear as STATIC text at the bottom; each window is
+                # half-open [ws,wend) so the outgoing prefix is disabled the instant the
+                # next one begins (no one-frame overlap flicker).
                 vf.append(
                     f"drawtext=fontfile={font_rel}:textfile={pf}:fontsize=34:fontcolor=white:"
                     f"borderw=5:bordercolor=black@0.95:shadowcolor=black@0.55:shadowx=2:shadowy=2:"
-                    f"x=(w-text_w)/2:"
-                    f"y='h-118-(10*(1-min(max((t-{wstart:.2f})/0.12,0),1)))':"
-                    f"alpha='if(lt(t,{wstart:.2f}+0.12),(t-{wstart:.2f})/0.12,1)':"
-                    f"enable='between(t,{wstart:.2f},{wend:.2f})'")
+                    f"x=(w-text_w)/2:y=h-118:"
+                    f"enable='gte(t,{wstart:.2f})*lt(t,{wend:.2f})'")
     vfstr = ",".join(vf) if vf else "null"
 
     # 5. final mux
