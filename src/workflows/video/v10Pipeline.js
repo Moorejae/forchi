@@ -326,6 +326,12 @@ async function runOnce({ runId, theme, dryRun = false, buildOnly = false, notify
             saveState(statePath, state);
             out.stages[stage] = { status: "done", skip: true };
             ok = true;
+            // FIX (2026-09-06): must NOT fall through to the generic success block —
+            // it overwrote out.stages.upload.skip, so cleanupRun deleted the freshly
+            // built mp4 + run dir even in build-only mode (the v10-watchdog publish
+            // phase then had "no built video"). upload is the last stage, so breaking
+            // the retry loop here is safe and preserves the skip flag.
+            break;
           } else { await uploadStage(runDir, mp4, thumb, rid); }
         }
         state.stages[stage] = { status: "done", attempt, at: Date.now() };
