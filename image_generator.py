@@ -91,6 +91,10 @@ DEFAULT_STYLE = os.environ.get(
     "mouth and a dark ONE-EYED monocle (single dark round lens over ONE eye, thin dark rim, short chain), "
     "wearing a SOLID BLACK suit jacket and dark trousers. Heads/faces ALWAYS plain white, bodies always "
     "black-ink cross-hatch, NO skin color or flesh tones anywhere; the only coloured element is clothing. "
+    "DENSE DETAIL (2026-09-06 user directive): every scene is RICHLY detailed and visually busy — layered "
+    "depth with a detailed foreground, a furnished mid-ground and a textured background; many objects, props, "
+    "plants, tools, books, pottery, architecture and small atmospheric details scattered through the frame; "
+    "fine hand-drawn line texture on every surface. Never flat, empty, sparse or minimally-drawn areas. "
     "NO text, NO letters, NO numbers, NO symbols, NO gibberish anywhere. High-contrast cinematic 16:9 "
     "composition.",
 )

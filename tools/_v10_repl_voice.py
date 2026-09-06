@@ -52,12 +52,14 @@ async def synth(text, out_mp3, rate):
     await com.save(out_mp3)
 
 def synth_higgs(text, out_wav, voice=HIGGS_VOICE, tokens=HIGGS_TOKENS, seed=HIGGS_SEED, max_tokens=HIGGS_MAX_TOKENS):
-    """Render with the Higgs baked voice (returns the wav path)."""
+    """Render with the Higgs baked voice (returns the wav path).
+    VOICE-CONSISTENCY (2026-09-06): temperature 0.9 -> 0.6 + fixed seed so the tone /
+    delivery stays CONSTANT scene-to-scene (Higgs at 0.9 wandered in pitch/emotion)."""
     c = get_higgs_client()
     res = c.predict(
         tokens + text,
         voice, None, None,
-        0.9, 0.95, 50, max_tokens, seed,
+        0.6, 0.95, 50, max_tokens, seed,
         api_name="/predict",
     )
     p = res if isinstance(res, str) else res[0]

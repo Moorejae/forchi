@@ -177,10 +177,12 @@ async function runOnce({ runId, theme, dryRun = false, buildOnly = false, notify
             }
             if (!higgsOk) {
               const missing = needScenes - wavCount(voiceDir);
-              console.warn(`[v10] voice: Higgs incomplete (${missing} scenes short) — Contabo fills ONLY the missing scenes`);
-              py(contaboCmd);
+              // VOICE-CONSISTENCY (2026-09-06): NEVER splice Contabo's F5 voice into
+              // missing scenes — a different voice mid-video is exactly the "tone keeps
+              // changing" the user hears. Force the whole stage to re-run on Higgs
+              // (resume-safe: only the missing scenes re-render, SAME voice).
+              throw new Error(`voice: Higgs rendered only ${wavCount(voiceDir)}/${needScenes} — no Contabo mix; re-running with the same voice`);
             }
-            if (wavCount(voiceDir) < needScenes) throw new Error(`voice: only ${wavCount(voiceDir)}/${needScenes} scenes rendered`);
             py(["tools/_v10_tighten_voice.py", "--dir", voiceDir]);
           }
         } else if (stage === "images") {

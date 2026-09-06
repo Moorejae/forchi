@@ -43,3 +43,40 @@ for i in range(1, 22):
     d1 = dur(p); after_tot += d1
     print(f"r{i:02d}: {d0:.1f}s silence%={sf:.0%} -> {d1:.1f}s")
 print(f"TOTAL: {before_tot:.1f}s -> {after_tot:.1f}s")
+
+# VOICE-CONSISTENCY (2026-09-06 user directive): equalize per-scene loudness so the
+# "voice waves" (level changes scene-to-scene) stop. Measure speech-RMS per scene,
+# then gain each scene toward the group median (bounded so we never pump noise).
+import math, statistics
+def speech_rms(p):
+    try:
+        with wave.open(p, 'rb') as w:
+            n = w.getnframes(); raw = w.readframes(n)
+            sw = w.getsampwidth()
+        if sw != 2 or n == 0:
+            return None
+        samples = struct.unpack(f'<{n}h', raw)
+        sp = [abs(x) for x in samples if abs(x) > int(0.01 * 32767)]
+        if not sp:
+            return None
+        return (sum(x * x for x in sp) / len(sp)) ** 0.5 / 32767.0
+    except Exception:
+        return None
+paths = [os.path.join(DIR, f"r{i:02d}.wav") for i in range(1, 22) if os.path.exists(os.path.join(DIR, f"r{i:02d}.wav"))]
+rms = {p: v for p in paths if (v := speech_rms(p)) and v > 1e-4}
+if len(rms) >= 2:
+    target = statistics.median(rms.values())
+    for p, v in rms.items():
+        gdb = 20 * math.log10(target / max(v, 1e-6))
+        gdb = max(-6.0, min(6.0, gdb))
+        if abs(gdb) < 0.5:
+            continue
+        tmp = p + ".eq.wav"
+        r = subprocess.run([FF, "-y", "-i", p, "-af", f"volume={gdb:.2f}dB",
+                            "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", tmp],
+                           capture_output=True)
+        if r.returncode == 0 and os.path.exists(tmp):
+            os.replace(tmp, p)
+            print(f"eq {os.path.basename(p)}: {gdb:+.1f}dB -> median loudness")
+    print(f"[voice-eq] equalized {len(rms)} scenes to a constant loudness")
+
