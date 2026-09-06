@@ -25,7 +25,7 @@ HIGGS_VOICE = "Victor Moore (clean)"
 # prosody token (keeps the approved "perfect" timbre, natural ~185-195 wpm after
 # tightening) — matching the energetic documentary pacing the scripts target.
 HIGGS_TOKENS = ""   # was "<|prosody:speed_slow|>" — removed 2026-09-05
-HIGGS_SEED = 7  # varied from 1234 (1234 carried the r01 pitch-ramp latent artifact)
+HIGGS_SEED = 8  # seed 7 reproduced a spoken hallucination "It's me." after "…his impatience became his undoing." (2026-09-06); seed 8 rendered the same scene clean word-for-word.
 # USER DIRECTIVE (2026-09-01): 4096 max audio tokens truncated long scenes mid-
 # sentence (the "last sentences missing" bug). 8192 lets a full scene render.
 HIGGS_MAX_TOKENS = 8192
