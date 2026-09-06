@@ -49,12 +49,16 @@ STYLE_LIGHT = ("V10 colorful storybook whiteboard art style: warm, gentle, famil
                "colored props, plants and architecture (soft greens, warm woods, muted ambers, gentle blues) that "
                "bring the scene to life. The NARRATOR is a GIANT — drawn MUCH larger than the story characters, "
                "towering over the scene — and wears a SOLID BLACK suit jacket and dark trousers with a dark "
-               "one-eyed monocle over one eye; story characters wear ONE period garment with a consistent "
-               "colour per character and are all the SAME SIZE as each other (but small beside the narrator). "
+               "one-eyed monocle over one eye. STORY CHARACTERS AND BACKGROUND PEOPLE are all the SAME SIZE "
+               "as each other (but small beside the narrator), and EVERY person is FULLY DRESSED head-to-toe "
+               "in a complete period outfit (a full tunic with trousers, or robes, or a full gown, with shoes) "
+               "— never bare-chested, never shirtless, never in underwear or partial clothing. "
                "CHARACTERS ARE NOT RACIALIZED: heads/faces are ALWAYS plain white spheres, bodies are ALWAYS "
                "black-ink cross-hatch — NO skin color, NO flesh tones, NO coloured faces or bodies anywhere; "
-               "the ONLY coloured element is clothing. NO text, NO letters, NO numbers, NO symbols, NO gibberish "
-               "anywhere.")
+               "the ONLY coloured element is clothing. SCENES ARE POPULATED AND ALIVE — never an empty or "
+               "single-figure frame: show the narrator plus the scene's named characters plus 1-3 background "
+               "people (villagers, guards, courtiers, townsfolk, students — whatever fits the setting) whenever "
+               "the narration allows. NO text, NO letters, NO numbers, NO symbols, NO gibberish anywhere.")
 STYLE_DARK = ("V10 noir graphic-novel art style: dark low-key background, deep ink hatching, dynamic "
               "chiaroscuro lighting, moody atmospheric volumetric light, subdued desaturated palette with "
               "warm amber and crimson rim lighting on the characters. NO text, NO letters, NO numbers, "
@@ -145,7 +149,11 @@ def design_scene(sc, idx, chunks):
               f"subject stays centered). Each frame depicts its narration chunk's content — objects/characters "
               f"may be added, removed, or repositioned WITHIN the fixed frame as the words describe. Always "
               f"include the narrator (red top, black trousers) unless the chunk removes him. All characters "
-              f"same size. NO text anywhere.")
+              f"same size. SCENES MUST BE POPULATED: show the narrator plus every named character plus 1-3 "
+              f"background figures (onlookers, villagers, guards, courtiers fitting the setting) whenever the "
+              f"narration allows — never an empty or sparse frame. EVERY person is FULLY DRESSED head-to-toe "
+              f"in complete period clothing — never bare-chested, never partial outfits, never underwear. "
+              f"NO text anywhere.")
     data = call_gemini(prompt)
     frames = [(f or "").strip() for f in (data.get("frames") or [])]
     frames = frames[:n_frames]

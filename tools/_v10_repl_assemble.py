@@ -462,6 +462,11 @@ def assemble(manifest_path, images_dir, wavs_dir, out_name, to_downloads=True, c
     vf = []
     tfile_i = 0
     if not no_overlays:
+        # BOTTOM CAPTION BAND (2026-09-06 user fix): a persistent dark strip at the very
+        # bottom of the frame so burned-in captions live in their OWN reserved area and
+        # never cover the scene art above it.
+        BAND_H = 190
+        vf.append(f"drawbox=x=0:y=ih-{BAND_H}:w=iw:h={BAND_H}:color=black@0.5:t=fill")
         for si, owner in enumerate(seg_owner):
             if owner is None:
                 continue  # punch-card segment (carries its own text)
@@ -476,8 +481,8 @@ def assemble(manifest_path, images_dir, wavs_dir, out_name, to_downloads=True, c
                     with open(os.path.join(work, tf), "w", encoding="utf-8") as f:
                         f.write(wrap_text(sub, width=46))
                     vf.append(
-                        f"drawtext=fontfile={font_rel}:textfile={tf}:fontsize=44:fontcolor=white:"
-                        f"borderw=5:bordercolor=black@0.9:line_spacing=6:x=(w-text_w)/2:y=h-240:"
+                        f"drawtext=fontfile={font_rel}:textfile={tf}:fontsize=42:fontcolor=white:"
+                        f"box=1:boxcolor=black@0.66:boxborderw=16:line_spacing=6:x=(w-text_w)/2:y=h-138:"
                         f"enable='between(t,{s0:.2f},{s1:.2f})'")
             # Optional scene label at top (off unless --labels).
             if labels and s.get("label"):
