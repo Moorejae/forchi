@@ -287,17 +287,11 @@ async function runOnce({ runId, theme, dryRun = false, buildOnly = false, notify
           }
           console.log(`[v10] images: ${files.length} frames present (${needShots} shots required)`);
         } else if (stage === "assemble") {
-          // USER DIRECTIVE (2026-09-01): burn subtitles INTO the video (bottom
-          // captions synced to each shot) + the curiosity-gap "WHY" hook over
-          // the opening seconds — every video ships with visible captions that
-          // carry the "why", not just an optional YouTube caption track.
-          const v10m = require("./v10Metadata.js");
-          const metaForHook = JSON.parse(fs.existsSync(metaPath) ? fs.readFileSync(metaPath, "utf8") : "{}");
-          const hookTitle = v10m.buildV10CuriosityTitle(metaForHook.title || "", metaForHook);
-          // --to-downloads is a Windows-dev convenience only (copies to ~/Downloads);
-          // on the VPS that dir may not exist, so skip it to avoid a post-write crash.
+          // USER DIRECTIVE (2026-09-01/09-06): burn kinetic captions INTO the video.
+          // The on-screen WHY-hook text was removed 2026-09-06 (user: stray words were
+          // "littered all over the screen") — captions are the ONLY overlay now.
           const dlArg = process.platform === "win32" ? ["--to-downloads"] : [];
-          py(["tools/_v10_repl_assemble.py", "v10_" + rid, "--manifest", manifestPath, "--images", imagesDir, "--wavs", voiceDir, "--subtitles", "--hook", hookTitle.slice(0, 90), "--no-kenburns", ...dlArg, "--sfx"]);
+          py(["tools/_v10_repl_assemble.py", "v10_" + rid, "--manifest", manifestPath, "--images", imagesDir, "--wavs", voiceDir, "--subtitles", "--no-kenburns", ...dlArg, "--sfx"]);
           if (!fs.existsSync(mp4) || fs.statSync(mp4).size < 500000) throw new Error("assemble output missing/too small");
           // TRUNCATION GUARD (2026-09-01): the video must not be shorter than the
           // narration (dropped final scene = missing last sentences). Compare the

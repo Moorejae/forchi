@@ -453,86 +453,60 @@ def assemble(manifest_path, images_dir, wavs_dir, out_name, to_downloads=True, c
     except Exception:
         pass
 
-    # 4. drawtext overlays — burned-in subtitles (bottom) + optional scene labels
-    #    (top) + a "WHY" hook over the opening seconds. Each overlay is attached
-    #    to its own SHOT segment window so text syncs with the spoken word.
-    #    Text is passed via textfile= (NOT text=) so arbitrary narration content
-    #    (apostrophes, colons, em-dashes, newlines) can NEVER break the ffmpeg
-    #    filter-graph parsing. Files live in the work dir (cwd=work on the mux).
+    # 4. drawtext overlays — burned-in KINETIC CAPTIONS only. (2026-09-06 user
+    #    directive: the scene labels / WHY-hook / legacy top text were "words
+    #    littered all over the screen" — they are removed so the ONLY on-screen text
+    #    is the caption.) Text is passed via textfile= (NOT text=) so arbitrary
+    #    narration content can NEVER break the ffmpeg filter-graph parsing.
     vf = []
     tfile_i = 0
-    if not no_overlays:
+    if not no_overlays and subtitles:
+        # Collect every spoken word into ONE ordered timeline across the whole video
+        # so captions run in continuous 5-word waves (not restarting per shot).
+        cap_words = []
         for si, owner in enumerate(seg_owner):
             if owner is None:
                 continue  # punch-card segment (carries its own text)
             st = shots[owner]
-            s = st["s"]
+            sub = str(st["sh"].get("text") or "").strip()
+            if not sub:
+                continue
             s0, s1 = starts[si], starts[si] + durs[si]
-            # BURNED-IN WORD-BY-WORD KINETIC CAPTION (2026-09-06 user directive): each
-            # word POPS UP alone at the bottom-center as it is spoken (quick alpha ramp
-            # + a tiny upward ease), then hands off to the next word. NO background
-            # box/band — readability comes from a bold sans font, a thick black outline
-            # and a soft shadow. Letters slightly smaller than the old full-phrase text.
-            if subtitles:
-                sub = str(st["sh"].get("text") or "").strip()
-                if sub:
-                    words = sub.split()
-                    total_chars = sum(len(w) for w in words) or 1
-                    span = max(0.3, (s1 - s0) - 0.1)  # shrink by a tiny breathing gap
-                    acc = 0.0
-                    n = len(words)
-                    for wi, w in enumerate(words):
-                        wdur = span * (len(w) / total_chars)
-                        ws = s0 + acc
-                        acc += wdur
-                        we = (s0 + acc) if wi < n - 1 else s1
-                        we = max(we, ws + 0.22)  # minimum on-screen time per word
-                        wf = f"w_{tfile_i}.txt"; tfile_i += 1
-                        with open(os.path.join(work, wf), "w", encoding="utf-8") as f:
-                            f.write(w)
-                        # pop: alpha 0->1 over 0.14s; y starts ~12px lower and eases up
-                        vf.append(
-                            f"drawtext=fontfile={font_rel}:textfile={wf}:fontsize=34:fontcolor=white:"
-                            f"borderw=5:bordercolor=black@0.95:shadowcolor=black@0.55:shadowx=2:shadowy=2:"
-                            f"x=(w-text_w)/2:"
-                            f"y='h-118-(12*(1-min(max((t-{ws:.2f})/0.14,0),1)))':"
-                            f"alpha='if(lt(t,{ws:.2f}+0.14),(t-{ws:.2f})/0.14,if(gt(t,{we:.2f}),0,1))':"
-                            f"enable='between(t,{ws:.2f},{we:.2f})'")
-            # Optional scene label at top (off unless --labels).
-            if labels and s.get("label"):
-                tf = f"sub_{tfile_i}.txt"; tfile_i += 1
-                with open(os.path.join(work, tf), "w", encoding="utf-8") as f:
-                    f.write(str(s["label"]))
+            words = sub.split()
+            total_chars = sum(len(w) for w in words) or 1
+            span = max(0.3, (s1 - s0) - 0.1)  # tiny breathing gap at the shot tail
+            acc = 0.0
+            for wi, w in enumerate(words):
+                wdur = span * (len(w) / total_chars)
+                ws = s0 + acc
+                acc += wdur
+                we = (s0 + acc) if wi < len(words) - 1 else s1
+                cap_words.append({"w": w, "ws": ws, "we": max(we, ws + 0.22)})
+
+        # 5-WORD KINETIC WAVES (user directive 2026-09-06): each wave ACCUMULATES word
+        # by word — show word 1, then words 1-2, ... up to words 1-5 — then the wave
+        # resets and the next wave of up to 5 continues. Each addition POPS (quick
+        # alpha ramp + tiny upward ease). NO background; readability comes from the
+        # bold sans font + thick black outline + soft shadow. Letters kept compact.
+        GROUP = 5
+        for gi in range(0, len(cap_words), GROUP):
+            wave = cap_words[gi:gi + GROUP]
+            wave_end = wave[-1]["we"]
+            for k in range(len(wave)):
+                prefix_text = " ".join(wk["w"] for wk in wave[:k + 1])
+                wstart = wave[k]["ws"]
+                wend = wave[k + 1]["ws"] if k + 1 < len(wave) else wave_end
+                wend = max(wend, wstart + 0.18)  # min on-screen time per addition
+                pf = f"p_{tfile_i}.txt"; tfile_i += 1
+                with open(os.path.join(work, pf), "w", encoding="utf-8") as f:
+                    f.write(prefix_text)
                 vf.append(
-                    f"drawtext=fontfile={font_rel}:textfile={tf}:fontsize=60:fontcolor=white:"
-                    f"borderw=6:bordercolor=black@0.9:x=(w-text_w)/2:y=80:"
-                    f"enable='between(t,{s0:.2f},{s1:.2f})'")
-            # Legacy per-scene label/bottom fields (kept for other manifests).
-            for (txt, idx) in [((s.get("label") or ""), 0), ((s.get("label2") or ""), 1), ((s.get("label3") or ""), 2)]:
-                if txt and (not labels):
-                    tf = f"sub_{tfile_i}.txt"; tfile_i += 1
-                    with open(os.path.join(work, tf), "w", encoding="utf-8") as f:
-                        f.write(str(txt))
-                    vf.append(
-                        f"drawtext=fontfile={font_rel}:textfile={tf}:fontsize=64:fontcolor=white:"
-                        f"borderw=6:bordercolor=black@0.9:x=(w-text_w)/2:y={90 + idx * 90}:"
-                        f"enable='between(t,{s0:.2f},{s1:.2f})'")
-            if s.get("bottom") and not subtitles:
-                tf = f"sub_{tfile_i}.txt"; tfile_i += 1
-                with open(os.path.join(work, tf), "w", encoding="utf-8") as f:
-                    f.write(str(s["bottom"]))
-                vf.append(
-                    f"drawtext=fontfile={font_rel}:textfile={tf}:fontsize=40:fontcolor=white:"
-                    f"borderw=4:bordercolor=black@0.85:line_spacing=8:x=(w-text_w)/2:y=h-200:"
-                    f"enable='between(t,{s0:.2f},{s1:.2f})'")
-        # "WHY" hook burned over the opening seconds (the video's curiosity title).
-        if hook:
-            with open(os.path.join(work, "hook.txt"), "w", encoding="utf-8") as f:
-                f.write(wrap_text(hook, width=40))
-            vf.append(
-                f"drawtext=fontfile={font_rel}:textfile=hook.txt:fontsize=54:fontcolor=white:"
-                f"borderw=5:bordercolor=black@0.9:line_spacing=6:x=(w-text_w)/2:y=h-420:"
-                f"enable='between(t,0.0,7.0)'")
+                    f"drawtext=fontfile={font_rel}:textfile={pf}:fontsize=34:fontcolor=white:"
+                    f"borderw=5:bordercolor=black@0.95:shadowcolor=black@0.55:shadowx=2:shadowy=2:"
+                    f"x=(w-text_w)/2:"
+                    f"y='h-118-(10*(1-min(max((t-{wstart:.2f})/0.12,0),1)))':"
+                    f"alpha='if(lt(t,{wstart:.2f}+0.12),(t-{wstart:.2f})/0.12,1)':"
+                    f"enable='between(t,{wstart:.2f},{wend:.2f})'")
     vfstr = ",".join(vf) if vf else "null"
 
     # 5. final mux
