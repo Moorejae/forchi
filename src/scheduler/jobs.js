@@ -6,14 +6,14 @@ const wlock = require("./workflowLock.js");
 
 // Auto mode: FACEBOOK 2 posts/day (08:00, 16:00 UTC).
 const AUTO_SCHEDULE = "0 8,16 * * *";
-// LINKEDIN — USER DIRECTIVE (2026-09-02): 2 posts per DAY (08:00 + 16:00 UTC).
-// Slot 08:00 = job-seeking post addressed to hiring managers + people who know
-// hiring managers (what Victor does / wants / the company / who to connect him to
-// / how to help). Slot 16:00 = build-in-public project showcase (real builds +
-// failures). See LI_JOB_TOPICS + LI_PROJECT_TOPICS and the LinkedIn generators.
+// LINKEDIN — USER DIRECTIVE (2026-09-07): 2 posts per DAY (08:00 + 16:00 UTC).
+// Slot 08:00 = "Did you know...?" learning post (teaches something new & useful
+// in cloud / DevOps / AI / LLMs / systems — NO job-seeking, NO asks to share or
+// refer Victor, NO pay talk). Slot 16:00 = build-in-public project showcase (real
+// builds + failures). See LI_LEARN_TOPICS + LI_PROJECT_TOPICS and the generators.
 function linkedinSlot(now = new Date()) {
   const h = now.getUTCHours();
-  if (h === 8) return "job";
+  if (h === 8) return "learn";
   if (h === 16) return "project";
   return null;
 }
@@ -34,19 +34,29 @@ const FB_THEMES = [
   "resilience: standing tall in the middle of the storm, not waiting for it to pass",
 ];
 
-// LinkedIn topics — USER DIRECTIVE (2026-09-02): LinkedIn now runs 2/day (08:00 +
-// 16:00 UTC). The 08:00 slot is a JOB-SEEKING post addressed to hiring managers +
-// people who know them; the 16:00 slot is a PROJECT-SHOWCASE post (real builds +
-// failures, never AI news). Each topic names a real angle; the LinkedIn generator
-// expands it from the real facts in its prompt (no invented metrics/numbers).
-const LI_JOB_TOPICS = [
-  "I build production AI and cloud systems — and I'm looking for a remote junior role where I can keep learning",
-  "Hiring managers and people who know them: here's what I do, what I want, and the company I'm looking for",
-  "Open to work: remote cloud security, DevOps, and AI integration roles — here's how you can help me get there",
-  "From a 24/7 agent and a crypto wallet to job hunting: my honest ask to recruiters and hiring managers",
-  "What I want in my next team — and the type of company I'm aiming for",
-  "A short intro to who I am, what I build, and who you should connect me to",
-  "Why I want to join a team with stronger engineers than me — and how to reach me",
+// LinkedIn topics — USER DIRECTIVE (2026-09-07): LinkedIn runs 2/day (08:00 +
+// 16:00 UTC). The 08:00 slot is a "Did you know...?" LEARNING post (teaches
+// something new in cloud / DevOps / AI / LLMs / systems / security — replaced the
+// old job-seeking post on 2026-09-07); the 16:00 slot is a PROJECT-SHOWCASE post
+// (real builds + failures, never AI news). Each topic names a real teachable idea;
+// the generator keeps it accurate (no invented numbers) and never job-seeking.
+const LI_LEARN_TOPICS = [
+  "Content-addressable storage: why uploaded objects get a content hash that guarantees they are never silently corrupted",
+  "Load balancer vs reverse proxy vs API gateway — what each actually does and when you need it",
+  "Why containers fix 'it works on my machine': reproducible environments explained simply",
+  "What really happens when you type a URL and press Enter — DNS, TCP, TLS, HTTP step by step",
+  "Why LLMs do not 'know' anything: token prediction under the hood and what it means for prompt design",
+  "Horizontal vs vertical scaling — and why stateless services are what make the cloud elastic",
+  "What a CDN is actually doing for you, and why caching is one of the highest-leverage performance tools",
+  "How HTTPS protects you: the TLS handshake and why you should never disable certificate verification",
+  "Idempotency: why it stops your APIs from double-charging or repeating side effects",
+  "Monolith vs microservices — and why most teams should start with the boring option",
+  "What MLOps adds beyond DevOps: data versioning, model drift, and reproducible training runs",
+  "Why databases use indexes — and what happens to your query when one is missing",
+  "How serverless really works: cold starts, event-driven billing, and the trade-offs the marketing page omits",
+  "What a vector database is for: how embeddings turn text into coordinates a search can measure",
+  "The CAP theorem in plain language: why distributed databases make you choose between consistency and availability",
+  "How git stores history: hash objects and why rebasing rewrites the story",
 ];
 
 const LI_PROJECT_TOPICS = [
@@ -102,7 +112,7 @@ let lastRun = null; // { at, fb: "ok"|"err", li: "ok"|"err", fbError, liError }
 // via remote APIs) and safe to run concurrently with a V10 build; the module's
 // own `running` flag prevents overlapping social posts.
 //
-// Slot preservation: the intended slot (08:00 job-seeking / 16:00 project) and its
+// Slot preservation: the intended slot (08:00 learning / 16:00 project) and its
 // topic are captured WHEN THE CRON FIRES and threaded through any retry. Before
 // this, a tick that was skipped (e.g. a previous run still in progress) recomputed
 // linkedinSlot() from the wall-clock on retry — once the top of the hour passed it
@@ -160,8 +170,8 @@ function makeSlot() {
   const slot = { fbTheme: pickFresh(FB_THEMES, "fb"), liSlot: linkedinSlot() };
   if (slot.liSlot) {
     slot.liTopic = pickFresh(
-      slot.liSlot === "job" ? LI_JOB_TOPICS : LI_PROJECT_TOPICS,
-      slot.liSlot === "job" ? "li_job" : "li_project"
+      slot.liSlot === "learn" ? LI_LEARN_TOPICS : LI_PROJECT_TOPICS,
+      slot.liSlot === "learn" ? "li_learn" : "li_project"
     );
   }
   return slot;
@@ -183,14 +193,14 @@ async function runSocialTick(slot = {}) {
     // Rotate themes by current day + hour so each run differs and changes daily
     // across the (now much larger) pools — never the same sequence two days in a row.
     // Fresh topic per platform (persisted, no day-to-day repeats).
-    // LinkedIn posts at BOTH slots: 08:00 = job-seeking, 16:00 = project showcase.
+    // LinkedIn posts at BOTH slots: 08:00 = "Did you know...?" learning, 16:00 = project showcase.
     const fbTheme = slot.fbTheme || pickFresh(FB_THEMES, "fb");
     const liSlot = slot.liSlot != null ? slot.liSlot : linkedinSlot();
     const liTopic = slot.liTopic || (liSlot
-      ? pickFresh(liSlot === "job" ? LI_JOB_TOPICS : LI_PROJECT_TOPICS, liSlot === "job" ? "li_job" : "li_project")
+      ? pickFresh(liSlot === "learn" ? LI_LEARN_TOPICS : LI_PROJECT_TOPICS, liSlot === "learn" ? "li_learn" : "li_project")
       : null);
 
-    console.log(`[Auto] ${new Date().toISOString()} — generating posts (FB: "${fbTheme}" | LI: ${liSlot ? `"${liTopic}" (${liSlot === "job" ? "job-seeking" : "project showcase"})` : "SKIPPED"})`);
+    console.log(`[Auto] ${new Date().toISOString()} — generating posts (FB: "${fbTheme}" | LI: ${liSlot ? `"${liTopic}" (${liSlot === "learn" ? "did-you-know learning" : "project showcase"})` : "SKIPPED"})`);
 
     // 1. Generate content in the two styles in parallel (LinkedIn only at its 2 slots).
     const [fb, li] = await Promise.allSettled([
@@ -238,7 +248,7 @@ function initScheduler() {
     console.log("[Scheduler] Auto mode already registered — skipping duplicate.");
     return;
   }
-console.log(`[Scheduler] Initializing AUTO mode (FB 2/day 8:00+16:00 UTC · LI 2/day: 8:00 job-seeking + 16:00 project showcase)... (currently ${autoMode.isEnabled() ? "ON ✅" : "OFF ⛔"})`);
+console.log(`[Scheduler] Initializing AUTO mode (FB 2/day 8:00+16:00 UTC · LI 2/day: 8:00 did-you-know learning + 16:00 project showcase)... (currently ${autoMode.isEnabled() ? "ON ✅" : "OFF ⛔"})`);
 
   cronTask = cron.schedule(
     AUTO_SCHEDULE,

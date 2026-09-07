@@ -90,7 +90,7 @@ bot.start((ctx) => {
   jobsNotify.setChatId(ctx.chat && ctx.chat.id);
   return ctx.reply(
     "Hey Victor — I'm ForChi, your personal workflow agent.\n\n" +
-    "I post to Facebook (2x/day) and LinkedIn (2x/day — 08:00 job-seeking posts for hiring managers + 16:00 project showcase posts), answer voice notes, search the web, run ForChi Jobs, and manage the YouTube Shorts + long-form channels (@sirxlud) — writing, voicing and posting Victor Moore poetry with AI instrumentals.\n\n" +
+    "I post to Facebook (2x/day) and LinkedIn (2x/day — 08:00 did-you-know tech learning posts + 16:00 project showcase posts), answer voice notes, search the web, run ForChi Jobs, and manage the YouTube Shorts + long-form channels (@sirxlud) — writing, voicing and posting Victor Moore poetry with AI instrumentals.\n\n" +
     "Try: /jobs · \"show me the jobs report\" · \"video status\" · \"turn on the video workflow\" · \"post a video now\" · or just talk to me."
   );
 });

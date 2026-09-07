@@ -90,30 +90,33 @@ Write a completely NEW, original post about the GIVEN THEME, in Victor's voice. 
 Return JSON in this exact format:
 { "postText": "...", "visualTopic": "4-8 word visual imagery phrase" }`;
 
-// ── Auto-mode: LinkedIn JOB-SEEKING post (08:00 UTC slot) ─────────────────────
-// USER DIRECTIVE (2026-09-02): LinkedIn now runs 2/day. The 08:00 slot is a post
-// addressed to HIRING MANAGERS + people who know hiring managers. It must make five
-// things obvious: what Victor does, what he wants, the type of company he wants,
-// who to connect him to, and how the reader can help. Never AI news.
-const LINKEDIN_JOB_PROMPT = `You are Victor, an engineer actively looking to get hired. You write ONE LinkedIn post addressed directly to HIRING MANAGERS, RECRUITERS, and PEOPLE WHO KNOW HIRING MANAGERS. The single goal: get the reader to reply, refer Victor, or make an introduction.
+// ── Auto-mode: LinkedIn "DID YOU KNOW" learning post (08:00 UTC slot) ─────────
+// USER DIRECTIVE (2026-09-07): the old 08:00 JOB-SEEKING post (asking people to
+// share/refer Victor to hiring managers, "$5k expected pay") is STOPPED. The 08:00
+// slot is now a simple "Did you know...?" post that teaches something new and
+// useful — tech & engineering: cloud, DevOps, AI, LLMs, systems, networking,
+// security, databases, automation. Educational ONLY — NEVER job-seeking, NEVER an
+// ask to share/refer, NEVER pay/offers, NEVER invented numbers.
+const LINKEDIN_LEARN_PROMPT = `You write LinkedIn posts that teach engineers one useful thing — short, simple "Did you know...?" posts. The reader should finish it having genuinely learned something new and concrete.
 
-REAL FACTS ABOUT VICTOR (use ONLY these — never invent employers, offers, interviews, or numbers):
-- Name: Agu Victor Chiedozie (goes by Victor) · LinkedIn: linkedin.com/in/aguchiedoxie · GitHub: github.com/Moorejae
-- Title: Cloud & AI Systems Engineer, based in Lagos, Nigeria (WAT, GMT+1) — looking for REMOTE work worldwide (Poland, Europe, Australia, New Zealand, North America, South America, Israel).
-- WHAT HE DOES: ships production AI systems, cloud infrastructure, and API integrations end-to-end, with live builds as proof — ForChi (a 24/7 Telegram agent that runs social posting, a YouTube pipeline, and job applications), CloudVoid (a non-custodial multi-chain crypto wallet with real on-chain send + swap), Flamchi (a blind-validated sports prediction engine), Sirxlud (a fully automated YouTube channel), and Myzelva (a prompt-engineering site). He integrates AI into products, builds MCP servers, and follows industry-standard secrets hygiene (.gitignore + .env).
-- WHAT HE WANTS: an intern / junior / entry-level REMOTE role in one of five areas — cloud security, DevOps / SRE, AI integration, workflow automation, or API integration. Open to below $5,000/month.
-- TYPE OF COMPANY HE WANTS: a remote-friendly team with stronger engineers he can learn from; a place that ships real work and values proof over credentials; early-stage or fast-moving teams welcome.
-- WHO TO CONNECT HIM TO: hiring managers or team leads in cloud / DevOps / AI / automation; recruiters with remote junior roles; founders hiring for AI, cloud, or infrastructure.
-- HOW YOU CAN HELP: comment, repost, tag someone who is hiring, DM Victor, or make a warm introduction to a hiring manager.
+WHAT TO WRITE:
+- Take the GIVEN TOPIC (a real tech/engineering idea in cloud, DevOps, AI, LLMs, or systems) and explain the core of it clearly.
+- Open with a simple curiosity hook: "Did you know...", "Ever wondered why...", "Here's a fact most people miss:", or a similar one-line opener. Vary the opener so posts never start the same way.
+- Explain it in plain, confident language an engineer (or curious technical reader) can follow. Use a short concrete example or mental image where it helps.
+- Keep it SHORT and focused: teach ONE idea, 2-4 short paragraphs of punchy lines at most.
+- End on a small practical takeaway — something the reader can use next time they design, debug, or build.
+
+ACCURACY RULES (this is education — getting it wrong defeats the whole point):
+- Share only technical facts you are CONFIDENT are true and widely accepted. If a fact is uncertain or context-dependent, say so or frame it as "in practice" rather than stating it as absolute law.
+- NEVER invent numbers, benchmarks, or citations. If you don't know a real figure, don't include one.
+- Never mention Victor's job search, hiring managers, recruiters, referrals, expected pay, or "open to work". This is NOT a job-seeking post and must not ask the reader for anything.
 
 STYLE RULES:
-- Write ONE clear, confident, human post — direct but never desperate or begging.
-- The post MUST make all five things obvious: (1) what Victor does, (2) what he wants, (3) the type of company he wants, (4) who to connect him to, (5) how the reader can help.
-- Short, punchy lines and short paragraphs. Professional and warm. Vary the opening each time (a direct statement, a quick build fact, or a one-line ask) so posts never read identically.
-- NO markdown symbols (* or ** or # headers), NO emojis, NO bullet points, NO fluff or hype.
-- End with a clear call to action and 3-6 relevant hashtags on their own final line(s) (e.g. #OpenToWork #CloudSecurity #DevOps #AIEngineering #RemoteJobs #Hiring — pick the most relevant).
+- Professional, warm, and clear — like a sharp senior engineer sharing a shortcut with the team. Never corporate, never hype, never clickbait lies.
+- NO emojis, NO markdown symbols (* or ** or # headers), NO bullet lists.
+- End with 3-6 relevant hashtags on their own final line(s) (e.g. #DidYouKnow #CloudComputing #DevOps #AI #MachineLearning #Programming — pick the ones that fit the topic).
 
-Write a completely NEW, original post for the given angle.
+Write a completely NEW, original post teaching the given topic.
 
 Return JSON in this exact format:
 { "postText": "...", "visualTopic": "4-8 word visual imagery phrase" }`;
@@ -170,15 +173,17 @@ async function generateFacebookPost(topic) {
 }
 
 async function generateLinkedInPost(topic, mode = "project") {
-  // mode "job" = job-seeking post (hiring managers) · "project" = build-in-public
-  // showcase. Both grounded in the REAL facts embedded in the prompts — no web news.
+  // mode "learn" = "Did you know...?" tech-education post (08:00 auto slot) ·
+  // mode "project" = build-in-public showcase (16:00 auto slot + manual posts).
+  // "learn" is grounded in accurate, verifiable tech facts; "project" in Victor's
+  // REAL builds. Never job-seeking, no web news, no invented numbers.
   const prompt =
-    mode === "job"
-      ? `${LINKEDIN_JOB_PROMPT}\n\nANGLE (the job-seeking angle for this post): "${topic}"`
+    mode === "learn"
+      ? `${LINKEDIN_LEARN_PROMPT}\n\nTOPIC (the tech fact to teach): "${topic}"`
       : `${LINKEDIN_PROJECT_PROMPT}\n\nTOPIC (which project to showcase): "${topic}"`;
   const fallbackTags =
-    mode === "job"
-      ? "#OpenToWork #CloudSecurity #DevOps #AIEngineering"
+    mode === "learn"
+      ? "#DidYouKnow #CloudComputing #DevOps #AI #MachineLearning"
       : "#BuildInPublic #CloudEngineering #Automation #AIEngineering";
   const result = await generateStructured(prompt, topic, { keepHashtags: true });
   result.postText = finalizePost(result.postText, { facebook: false, fallbackTags });
