@@ -42,7 +42,7 @@ function standaloneVideoActive() {
     const BASE = process.env.FORCHI_BASE || path.resolve(__dirname, "..", "..", "..");
     const m = JSON.parse(fs.readFileSync(path.join(BASE, "temp_media", "video_mode.json"), "utf8"));
     if (!m.enabled) return false;
-    // The standalone writes nextRunAt whenever it schedules (every 6-10h). Active
+    // The standalone writes nextRunAt at fixed 11am/2pm/5pm WAT slots. Active
     // = it has a future run planned OR it scheduled one recently (past ~14h covers
     // the max gap + a failed-build retry window).
     if (!m.nextRunAt) return false;

@@ -1,7 +1,9 @@
-// ForChi V10 daily scheduler — TWO 5-min video posts per day (Nigerian time, WAT).
-// USER DIRECTIVE (2026-09-02): publish the V10 videos at 2pm and 8pm Nigerian time.
-//   Slot 1: BUILD 8:00  -> PUBLISH 14:00 (2pm WAT) + 15-50 min jitter
-//   Slot 2: BUILD 16:00 -> PUBLISH 20:00 (8pm WAT) + 15-50 min jitter
+// ForChi V10 daily scheduler — TWO long-form video posts per day (Nigerian time, WAT).
+// USER DIRECTIVE (2026-09-08): publish the V10 videos at 12pm and 5pm Nigerian time.
+//   Slot 1 (Morning): BUILD 7:00  -> PUBLISH 12:00 (12pm WAT)
+//   Slot 2 (Evening): BUILD 13:00 -> PUBLISH 17:00 (5pm WAT)
+//   Builds run hours ahead of each publish so they never clash with the posting
+//   windows (exact times — no jitter).
 //
 // State lives in temp_media/v10_mode.json:
 //   { enabled, jitterMinMinutes, jitterMaxMinutes, targetTz,
@@ -22,14 +24,14 @@ const STATE_FILE = path.join(BASE, "temp_media", "v10_mode.json");
 
 const DEFAULTS = {
   enabled: false,
-  jitterMinMinutes: 15,
-  jitterMaxMinutes: 50,
+  jitterMinMinutes: 0, // exact posting times (USER DIRECTIVE 2026-09-08: 12pm & 5pm WAT)
+  jitterMaxMinutes: 0,
   targetTz: "Africa/Lagos", // Nigerian time (WAT, UTC+1, no DST)
   // Legacy top-level fields (kept for backward compat; slots[] is the source of truth)
-  buildHour: 8, buildMinute: 0, targetHour: 14, targetMinute: 0,
+  buildHour: 7, buildMinute: 0, targetHour: 12, targetMinute: 0,
   slots: [
-    { label: "Morning", buildHour: 8,  buildMinute: 0, targetHour: 14, targetMinute: 0 }, // 2pm WAT
-    { label: "Evening", buildHour: 16, buildMinute: 0, targetHour: 20, targetMinute: 0 }, // 8pm WAT
+    { label: "Morning", buildHour: 7,  buildMinute: 0, targetHour: 12, targetMinute: 0 }, // 12pm WAT
+    { label: "Evening", buildHour: 13, buildMinute: 0, targetHour: 17, targetMinute: 0 }, // 5pm WAT
   ],
 };
 
@@ -47,9 +49,9 @@ function loadState() {
   }
   d.slots.forEach((sl, i) => {
     sl.label = sl.label || (i === 0 ? "Morning" : "Evening");
-    sl.buildHour = sl.buildHour != null ? sl.buildHour : (i === 0 ? 8 : 16);
+    sl.buildHour = sl.buildHour != null ? sl.buildHour : (i === 0 ? 7 : 13);
     sl.buildMinute = sl.buildMinute != null ? sl.buildMinute : 0;
-    sl.targetHour = sl.targetHour != null ? sl.targetHour : (i === 0 ? 14 : 20);
+    sl.targetHour = sl.targetHour != null ? sl.targetHour : (i === 0 ? 12 : 17);
     sl.targetMinute = sl.targetMinute != null ? sl.targetMinute : 0;
     sl.nextBuildAt = sl.nextBuildAt || null;
     sl.nextPublishAt = sl.nextPublishAt || null;

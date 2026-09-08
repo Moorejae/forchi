@@ -1,8 +1,9 @@
 // src/workflows/video/standalone.js
 // Standalone LOCAL auto-poster for the Victor Moore YouTube Shorts workflow.
-// Runs WITHOUT the Telegram bot / Render — purely generates + uploads a Short
-// every random 15-50 min when enabled. Ideal for running on this PC (or a VM/VPS
-// later) so the video workflow is fully autonomous regardless of where the bot lives.
+// Runs WITHOUT the Telegram bot / Render — purely generates + uploads a Short at
+// fixed Nigerian times (11am / 2pm / 5pm WAT) when enabled. Ideal for running on
+// this PC (or a VM/VPS) so the video workflow is fully autonomous regardless of
+// where the bot lives.
 //
 // Control (state persisted in temp_media/video_mode.json):
 //   node src/workflows/video/standalone.js on      -> enable auto-posting
@@ -54,34 +55,50 @@ async function notify(text) {
   } catch (e) { console.warn("[Standalone] notify failed:", e.message); }
 }
 
-// ~3 Shorts/day: random 6-10 HOURS apart PLUS a 15-50 min human-like variation
-// (matches the user's 3/day directive; reduced from the old 5/day 3-6h model).
-const HOURS_MIN = 6;
-const HOURS_MAX = 10;
-const EXTRA_MIN = 15;
-const EXTRA_MAX = 50;
-function randomMins() {
-  const hours = HOURS_MIN + Math.random() * (HOURS_MAX - HOURS_MIN);
-  const extra = EXTRA_MIN + Math.random() * (EXTRA_MAX - EXTRA_MIN);
-  return Math.round(hours * 60 + extra);
+// Fixed 3 Shorts/day at 11:00, 14:00 and 17:00 Nigerian time (WAT) — USER
+// DIRECTIVE (2026-09-08). Exact local slot times, no random interval.
+const SLOT_HOURS_WAT = [11, 14, 17];
+const TZ = "Africa/Lagos"; // WAT, UTC+1, no DST
+
+// Wall-clock parts of `date` in `tz` (same approach as the V10 scheduler).
+function zonedParts(date, tz) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+  }).formatToParts(date);
+  const get = (t) => parseInt((parts.find((p) => p.type === t) || {}).value, 10);
+  return { y: get("year"), mo: get("month"), d: get("day"), h: get("hour") === 24 ? 0 : get("hour"), mi: get("minute"), s: get("second") };
 }
-function fmtGap(mins) {
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return m ? `${h}h ${m}m` : `${h}h`;
+function tzOffsetMs(dateUtc, tz) {
+  const p = zonedParts(new Date(dateUtc), tz);
+  return Date.UTC(p.y, p.mo - 1, p.d, p.h, p.mi, p.s) - dateUtc;
+}
+
+// Next fixed slot (11/14/17 WAT), strictly in the future.
+function nextSlotAt(now = Date.now()) {
+  for (let day = 0; day < 8; day++) {
+    const probe = new Date(now + day * 86400000);
+    const p = zonedParts(probe, TZ);
+    for (const h of SLOT_HOURS_WAT) {
+      const guessUtc = Date.UTC(p.y, p.mo - 1, p.d, h, 0, 0);
+      const runUtc = guessUtc - tzOffsetMs(guessUtc, TZ);
+      if (runUtc > now) return runUtc;
+    }
+  }
+  return now + 86400000;
 }
 
 let timer = null;
 function scheduleNext() {
   if (timer) { clearTimeout(timer); timer = null; }
-  const mins = randomMins();
-  const at = Date.now() + mins * 60000;
+  const at = nextSlotAt();
   const m = loadMode();
   m.enabled = true;
   m.nextRunAt = at;
   saveMode(m);
-  console.log(`[Standalone] next Short in ~${fmtGap(mins)} (${new Date(at).toISOString()})`);
-  timer = setTimeout(tick, mins * 60000);
+  const lbl = new Date(at).toLocaleString("en-US", { timeZone: TZ, weekday: "short", hour: "numeric", minute: "2-digit", hour12: true });
+  console.log(`[Standalone] next Short at ${lbl} (${new Date(at).toISOString()})`);
+  timer = setTimeout(tick, at - Date.now());
   if (typeof timer.unref === "function") timer.unref();
 }
 
