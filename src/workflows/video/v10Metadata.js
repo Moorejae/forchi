@@ -68,57 +68,90 @@ function buildV10Title(baseTitle, rng, forcedTags) {
   return title.length <= MAX_TITLE ? title : title.slice(0, MAX_TITLE - 1).trim() + "…";
 }
 
-// ── CURIOSITY-GAP "WHY" TITLES (user directive 2026-08-31) ───────────────────
-// Long-form channels win clicks with the curiosity-gap psychology: an open loop
-// in the title that the video then closes ("Why ..."). We GUARANTEE every V10
-// title opens that loop:
-//   1. If the script title is already a curiosity question (Why/How/What/Who/
-//      The Real Reason/What Nobody Tells You) -> keep it.
-//   2. Otherwise transform it deterministically into a WHY hook (open loop,
-//      specific to the story, never clickbait lies).
-const CURIOUS_RE = /^(why\b|how\b|what\b|who\b|the real reason|what nobody tells|the truth about|the hidden reason|the surprising reason)/i;
-const FALLBACK_REASONS = [
-  "Matters More Than You Think",
-  "Changes Everything You Knew",
-  "Was Hiding in Plain Sight",
-  "Is Not What the History Books Say",
-  "Explains More Than Any Lesson Ever Could",
+// ── SHORT "MYSTERY" TITLES (user directive 2026-09-09) ───────────────────────
+// The old convention forced every title into a long "Why ..." curiosity question
+// ("Y." = the Why-prefix). That is DROPPED. New rule:
+//   - NO leading Why/How/What/Who/The Real Reason/... question hooks ("stop using Y.").
+//   - MAX 4 words for the descriptive name.
+//   - SHROUDED IN MYSTERY yet HONEST: it names the story's iconic object/event/
+//     person so the viewer knows what the video is about, but the twist/lesson
+//     stays hidden — the click opens the loop the video closes.
+// v10ScriptGen now asks the model to WRITE this title; this function is the
+// deterministic safety net that (a) strips any leaked "Why..."/"Y." question
+// opener and (b) forces the result down to <=4 words.
+const QUESTION_LEAD = /^(why\b|how\b|what\b|who\b|the real reason|the truth about|what nobody tells|what nobody knows|the hidden reason|the surprising reason|the untold story of|the secret (behind|of)|y\.?\s+)/i;
+const MYSTERY_FALLBACKS = [
+  "The Story Behind the Silence",
+  "What the Past Never Said",
+  "The Quiet Fall",
+  "The Secret They Buried",
+  "The Day Everything Changed",
 ];
 
-function capWord(w) { return w ? w[0].toUpperCase() + w.slice(1) : w; }
-// Lowercase a leading article when it lands mid-sentence ("Why a Family Secret...").
-function deArticle(w) { return /^(a|an|the)\s+/i.test(w) ? w[0].toLowerCase() + w.slice(1) : w; }
+function wordCount(t) { return String(t || "").trim() ? String(t).trim().split(/\s+/).length : 0; }
 
-function buildV10CuriosityTitle(baseTitle, meta) {
+// Deterministic fallback when a title is not already a short mystery name:
+// keep the story's iconic "object of ..." phrase (max 4 words), else the first
+// 4 words, dropping a leading a/an/the when it helps fit the 4-word limit.
+function mysteryFrom(t) {
+  let w = String(t || "").trim().split(/\s+/).filter(Boolean);
+  if (!w.length) return "";
+  const i = w.findIndex((x) => /^of$/i.test(x));
+  if (i > 0) {
+    // "The Cost of Household Secrets..." -> keep "Cost of Household Secrets" (<=4)
+    const start = Math.max(0, i - 1);
+    let keep = w.slice(start, start + 4);
+    if (keep.length === 4 && /^(a|an|the)$/i.test(keep[0])) keep = keep.slice(1);
+    w = keep;
+  } else {
+    w = w.slice(0, 4);
+    if (/^(a|an|the)$/i.test(w[0])) w = w.slice(1);
+    w = w.slice(0, 4); // after dropping a leading article, still cap at 4 words
+  }
+  return w.join(" ");
+}
+
+function buildV10MysteryTitle(baseTitle, meta) {
   // Clean: strip hashtags / trailing punctuation / collapse whitespace.
   let t = String(baseTitle || meta?.title || "")
     .replace(/#\w+/g, " ").replace(/\s+/g, " ").trim()
-    .replace(/[.!?]+$/, "").trim();
-  if (!t) return "Why the Story Nobody Tells Still Matters";
-  if (CURIOUS_RE.test(t)) return t;
+    .replace(/[.!?…]+$/, "").trim();
 
-  // "Book Summary: <subject>" -> keep the label, hook the subject with WHY.
+  // "Book Summary: <subject>" is a required playlist label — keep it, but limit
+  // the whole name to <=4 words (label = 2 words, subject <= 2 words).
   if (/^book summary\s*[:,-]?\s+/i.test(t)) {
     const rest = t.replace(/^book summary\s*[:,-]?\s+/i, "").trim();
-    return `Book Summary: ${buildV10CuriosityTitle(rest, meta)}`;
+    const subj = mysteryFrom(rest).split(/\s+/).filter(Boolean).slice(0, 2);
+    if (/^(of|the|a|an)$/i.test(subj[subj.length - 1] || "")) subj.pop();
+    return `Book Summary: ${subj.join(" ")}`;
   }
 
-  // "The <Danger/Cost/Weight> of <X>" -> "Why <X> Is More ... Than You Think"
-  const ofMatch = t.match(/^the\s+(.+?)\s+of\s+(.+)$/i);
-  if (ofMatch) {
-    const subject = deArticle(capWord(ofMatch[2].trim()));
-    const aspect = ofMatch[1].trim().toLowerCase();
-    const tail = aspect.includes("danger") ? "Is More Dangerous Than It Looks"
-      : aspect.includes("cost") ? "Costs More Than Anyone Admits"
-      : aspect.includes("weight") || aspect.includes("price") ? "Is Heavier Than You Think"
-      : `Reveals More About ${capWord(aspect)} Than You Think`;
-    return `Why ${subject} ${tail}`;
+  // Stop the "Y."/Why... question convention (user directive 2026-09-09).
+  t = t.replace(QUESTION_LEAD, "").replace(/\s+/g, " ").trim();
+  t = t.replace(/^[,.;:!?–—-]+/, "").trim();
+  // Legacy "The Danger of Winning: The True Story of Pyrrhus" style -> keep the
+  // iconic phrase before the colon/dash ("Danger of Winning").
+  const sep = t.search(/[:—–]/);
+  if (sep > 2) t = t.slice(0, sep).replace(/[—–:]+$/, "").trim();
+  if (!t) {
+    const rng = makeRng(meta?.seed == null ? null : meta.seed);
+    return MYSTERY_FALLBACKS[Math.floor(rng() * MYSTERY_FALLBACKS.length)];
   }
 
-  // Generic: "Why <title> <reason>" (open loop, still specific).
-  const rng = makeRng(meta?.seed == null ? null : meta.seed);
-  const reason = FALLBACK_REASONS[Math.floor(rng() * FALLBACK_REASONS.length)];
-  return `Why ${deArticle(capWord(t))} ${reason}`;
+  // Already short enough and not a question -> keep as-is (the model's title).
+  if (wordCount(t) <= 4 && !QUESTION_LEAD.test(t)) {
+    // Preserve "The X of Y" capitalisation style by just returning it clean.
+    return t;
+  }
+
+  // Too long or a leaked question opener -> deterministic mystery fallback.
+  let out = mysteryFrom(t);
+  out = out.replace(QUESTION_LEAD, "").trim();
+  if (!out) {
+    const rng = makeRng(meta?.seed == null ? null : meta.seed);
+    out = MYSTERY_FALLBACKS[Math.floor(rng() * MYSTERY_FALLBACKS.length)];
+  }
+  return out.split(/\s+/).slice(0, 4).join(" ");
 }
 
 
@@ -149,4 +182,4 @@ function buildV10Description({ baseTitle, chapters, script, seed }) {
   ].join("\n");
 }
 
-module.exports = { buildV10Title, buildV10Description, buildChapters, formatTime, makeRng, TAG_POOLS, buildV10CuriosityTitle, CURIOUS_RE };
+module.exports = { buildV10Title, buildV10Description, buildChapters, formatTime, makeRng, TAG_POOLS, buildV10MysteryTitle, QUESTION_LEAD };

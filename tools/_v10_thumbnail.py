@@ -153,13 +153,17 @@ def load_font(size, candidates=None):
 CURIOSITY_WORDS = {"why", "how", "what", "who"}
 
 def derive_hook(title, max_words=4):
-    """Fallback: build a short all-caps hook from the title. A LEADING curiosity
-    word (WHY/HOW/WHAT/WHO) is kept AND the words stay intact (no stopword
-    stripping) so the hook reads naturally: "WHY WINNING IS MORE DANGEROUS".
-    Without a curiosity opener we fall back to the punchy stopword-stripped
-    2-4 word style ("THE PYRRHIC TRAP")."""
+    """Fallback: build a short all-caps hook from the title. Titles that are
+    ALREADY short (<=max_words, the new V10 mystery style e.g. "Bowl of Buried
+    Peace") render IN FULL — no stopword mangling. Longer titles fall back to the
+    punchy stopword-stripped style ("THE PYRRHIC TRAP"), keeping a LEADING
+    curiosity word (WHY/HOW/WHAT/WHO) intact when present."""
     tokens = title.replace(":", " ").replace("'", "").split()
-    if tokens and tokens[0].lower() in CURIOSITY_WORDS:
+    if not tokens:
+        return "THE STORY"
+    if len(tokens) <= max_words:
+        return " ".join(tokens).upper()
+    if tokens[0].lower() in CURIOSITY_WORDS:
         return " ".join(tokens[:max_words]).upper() or "THE STORY"
     words = [w for w in tokens if w.lower() not in STOPWORDS]
     if not words:

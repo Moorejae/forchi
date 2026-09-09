@@ -1,17 +1,17 @@
-// ForChi V10 daily scheduler — TWO long-form video posts per day (Nigerian time, WAT).
-// USER DIRECTIVE (2026-09-08): publish the V10 videos at 12pm and 5pm Nigerian time.
-//   Slot 1 (Morning): BUILD 7:00  -> PUBLISH 12:00 (12pm WAT)
-//   Slot 2 (Evening): BUILD 13:00 -> PUBLISH 17:00 (5pm WAT)
-//   Builds run hours ahead of each publish so they never clash with the posting
-//   windows (exact times — no jitter).
+// ForChi V10 daily scheduler — ONE long-form video post per day (Nigerian time, WAT).
+// USER DIRECTIVE (2026-09-09): publish the V10 video once a day at 2pm Nigerian time.
+//   Daily slot: BUILD 8:00  -> PUBLISH 14:00 (2pm WAT)
+//   The build runs ~6h ahead of the publish so it never clashes with the posting
+//   window (exact time — no jitter).
 //
 // State lives in temp_media/v10_mode.json:
 //   { enabled, jitterMinMinutes, jitterMaxMinutes, targetTz,
 //     slots: [ { label, buildHour, buildMinute, targetHour, targetMinute,
 //                nextBuildAt, nextPublishAt, pendingRunId,
-//                lastBuildAt, lastPublishAt }, ... ] }
-// Legacy single-slot state (top-level nextBuildAt/nextPublishAt/buildHour...) is
-// migrated automatically on load.
+//                lastBuildAt, lastPublishAt } ] }   <- exactly ONE slot
+// Legacy single-slot state (top-level nextBuildAt/nextPublishAt/buildHour...) and
+// the old TWO-slot state (Morning 12:00 + Evening 17:00) are migrated automatically
+// on load to a single 14:00 daily slot.
 //
 // Usage (CLI):
 //   node src/workflows/video/v10Scheduler.js on|off|status|now
@@ -22,17 +22,16 @@ const path = require("path");
 const BASE = process.env.FORCHI_BASE || path.resolve(__dirname, "..", "..", "..");
 const STATE_FILE = path.join(BASE, "temp_media", "v10_mode.json");
 
+const DAILY_SLOT = { label: "Daily", buildHour: 8, buildMinute: 0, targetHour: 14, targetMinute: 0 }; // build 8:00 -> publish 14:00 (2pm WAT)
+
 const DEFAULTS = {
   enabled: false,
-  jitterMinMinutes: 0, // exact posting times (USER DIRECTIVE 2026-09-08: 12pm & 5pm WAT)
+  jitterMinMinutes: 0, // exact posting time (USER DIRECTIVE 2026-09-09: 2pm WAT)
   jitterMaxMinutes: 0,
   targetTz: "Africa/Lagos", // Nigerian time (WAT, UTC+1, no DST)
   // Legacy top-level fields (kept for backward compat; slots[] is the source of truth)
-  buildHour: 7, buildMinute: 0, targetHour: 12, targetMinute: 0,
-  slots: [
-    { label: "Morning", buildHour: 7,  buildMinute: 0, targetHour: 12, targetMinute: 0 }, // 12pm WAT
-    { label: "Evening", buildHour: 13, buildMinute: 0, targetHour: 17, targetMinute: 0 }, // 5pm WAT
-  ],
+  buildHour: 8, buildMinute: 0, targetHour: 14, targetMinute: 0,
+  slots: [Object.assign({}, DAILY_SLOT)],
 };
 
 function rawState() {
@@ -40,25 +39,27 @@ function rawState() {
 }
 function loadState() {
   const d = Object.assign({}, DEFAULTS, rawState());
-  // Migrate legacy single-slot state into slots[]
-  if (!Array.isArray(d.slots)) {
-    d.slots = [
-      { label: "Morning", buildHour: d.buildHour, buildMinute: d.buildMinute, targetHour: d.targetHour, targetMinute: d.targetMinute },
-      Object.assign({}, DEFAULTS.slots[1]),
-    ];
-  }
-  d.slots.forEach((sl, i) => {
-    sl.label = sl.label || (i === 0 ? "Morning" : "Evening");
-    sl.buildHour = sl.buildHour != null ? sl.buildHour : (i === 0 ? 7 : 13);
-    sl.buildMinute = sl.buildMinute != null ? sl.buildMinute : 0;
-    sl.targetHour = sl.targetHour != null ? sl.targetHour : (i === 0 ? 12 : 17);
-    sl.targetMinute = sl.targetMinute != null ? sl.targetMinute : 0;
-    sl.nextBuildAt = sl.nextBuildAt || null;
-    sl.nextPublishAt = sl.nextPublishAt || null;
-    sl.pendingRunId = sl.pendingRunId || null;
-    sl.lastBuildAt = sl.lastBuildAt || null;
-    sl.lastPublishAt = sl.lastPublishAt || null;
-  });
+  // Converge to a SINGLE daily slot. The old scheduler ran TWO slots (Morning 12:00
+  // WAT + Evening 17:00 WAT); the user directive (2026-09-09) is one video at 2pm
+  // WAT, so any persisted slot list is reduced to its first slot and its times are
+  // normalized to the legacy->14:00 migration (a future manual re-tune via the
+  // state file is still respected as long as it isn't a stale 12:00/17:00 value).
+  if (!Array.isArray(d.slots) || !d.slots.length) d.slots = [Object.assign({}, DAILY_SLOT)];
+  d.slots = d.slots.slice(0, 1);
+  const sl = d.slots[0];
+  sl.label = sl.label || DAILY_SLOT.label;
+  sl.buildHour = sl.buildHour != null ? sl.buildHour : DAILY_SLOT.buildHour;
+  sl.buildMinute = sl.buildMinute != null ? sl.buildMinute : DAILY_SLOT.buildMinute;
+  sl.targetHour = sl.targetHour != null ? sl.targetHour : DAILY_SLOT.targetHour;
+  sl.targetMinute = sl.targetMinute != null ? sl.targetMinute : DAILY_SLOT.targetMinute;
+  // Retire stale legacy times (old 2-per-day schedule / old defaults).
+  if (sl.targetHour === 12 || sl.targetHour === 17) { sl.targetHour = DAILY_SLOT.targetHour; sl.targetMinute = DAILY_SLOT.targetMinute; }
+  if (sl.buildHour === 7 || sl.buildHour === 13) { sl.buildHour = DAILY_SLOT.buildHour; sl.buildMinute = DAILY_SLOT.buildMinute; }
+  sl.nextBuildAt = sl.nextBuildAt || null;
+  sl.nextPublishAt = sl.nextPublishAt || null;
+  sl.pendingRunId = sl.pendingRunId || null;
+  sl.lastBuildAt = sl.lastBuildAt || null;
+  sl.lastPublishAt = sl.lastPublishAt || null;
   return d;
 }
 function saveState(s) {
@@ -140,10 +141,10 @@ function status() {
   };
 }
 
-// TWO-SLOT daily watchdog: each slot has a BUILD phase and a PUBLISH phase.
-// buildFn runs the pipeline in build-only mode and returns { runId }; publishFn
-// uploads that run. The firing slot is passed as the first arg so callers can vary
-// theme/etc. per slot if desired.
+// DAILY watchdog: the single slot has a BUILD phase and a PUBLISH phase. buildFn
+// runs the pipeline in build-only mode and returns { runId }; publishFn uploads
+// that run. The firing slot is passed as the first arg so callers can vary theme
+// if desired.
 function startV10Scheduler({ buildFn, publishFn } = {}, { notify } = {}, intervalMs = 30000) {
   let running = false;
   const tick = async () => {

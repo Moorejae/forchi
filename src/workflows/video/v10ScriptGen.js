@@ -234,7 +234,7 @@ async function callGemini(prompt) {
 // period-appropriate clothing of their culture/era, consistent per character.
 const CHAR_SPEC = `V10 colorful storybook whiteboard art style: warm, gentle, family-friendly palette, light warm background with pure black ink line art and hand-drawn cross-hatch textures. THE NARRATOR is a stickman host who is ALWAYS present: large spherical white head, two small dot eyes, thin curved eyebrows, simple black line mouth, dense hand-drawn diagonal ink cross-hatch scribble body texture, simple rounded mitten hands, flat black feet — and he ALWAYS wears a SOLID BLACK suit jacket and DARK trousers with a dark ONE-EYED monocle (a single dark round lens over ONE eye, thin dark rim, short chain) in EVERY scene. THE NARRATOR IS A GIANT: he is drawn MUCH LARGER than every story character — towering over the scenes, head-and-shoulders above the story world — watching and gesturing from above but NEVER joining the characters. STORY CHARACTERS: stickmen of the same base design but SMALL beside the giant narrator; they wear clothing appropriate to their culture and time period (e.g. viking tunic, roman toga, asian robes, african garments — whatever the story's era/culture calls for), and each character's outfit is CONSISTENT across all their scenes. The SCENE / background is alive with soft COLOUR: colored objects, colored background elements, colored props, plants and architecture (storybook palette — warm, gentle, family-friendly) that bring every scene to life. ALL story characters are the SAME SIZE as each other — but the NARRATOR is a GIANT, much larger than all of them. CHARACTERS ARE NOT RACIALIZED: heads/faces are ALWAYS plain white spheres, bodies are ALWAYS the black-ink cross-hatch texture — NO skin color, NO flesh tones, NO coloured faces or bodies anywhere; the ONLY coloured element is clothing (the narrator's red top / a story character's single period garment). Rich but clean: each scene has several background objects to bring it to life (furniture, props, plants, architecture fitting the setting), all in soft storybook colour. NO captions, NO on-screen text, NO letters, NO numbers, NO symbols, NO gibberish ANYWHERE.`;
 
-function buildPrompt(theme, researchText) {
+function buildPrompt(theme, researchText, sparks = []) {
   // Target length is configurable (V10_TARGET_MINUTES; default 5). Everything
   // downstream (word count, scene count, act timings) scales off it.
   // Measured: the Victor Moore voice (F5/Higgs) actually runs ~200 wpm of spoken
@@ -247,10 +247,16 @@ function buildPrompt(theme, researchText) {
   const N_SCENES = Math.max(4, Math.round(TMIN * 2.6));
   const fmt = (frac) => { const t = TMIN * frac; const m = Math.floor(t); const s = Math.round((t - m) * 60); return `${m}:${String(s).padStart(2, "0")}`; };
   const act1e = fmt(0.15), act2e = fmt(0.5), act3e = fmt(0.8), end = fmt(1.0);
+  // GOOGLE TRENDS human-pulse block (best-effort; empty when trends are offline).
+  const pulseBlock = (Array.isArray(sparks) && sparks.length)
+    ? `HUMAN PULSE — what people are searching for RIGHT NOW (Google Trends; noisy raw list):\n${sparks.slice(0, 25).join(" · ").slice(0, 900)}\n\nUse this ONLY to choose WHICH obscure story/angle resonates today. If any pulse echoes a psychology from your story pool (a rivalry, a comeback, a fall from grace, a public secret, loyalty tested, an underdog, a farewell, a family feud, a forbidden thing), prefer an obscure tale whose lesson echoes it — or pick the culture/region people are focused on. The video must STAY an obscure folklore/historical/Biblical psychological tale in the channel's niche. NEVER make a trending news topic the subject, NEVER name any trending person/event, NEVER mention Google/Trends/searches in the narration. If the list feels unusable, ignore it and pick purely from the theme.`
+    : "";
   return `You are a documentary scriptwriter for a family-friendly YouTube channel (adults AND children watch together). Channel rules: grounded & ethical; folklore/historical/Biblical events as psychological case studies; the viewer must walk away with an actionable life insight. Theme for THIS video: "${theme}".
 
 RESEARCH (use facts, never invent):
 ${researchText}
+
+${pulseBlock}
 
 STORY SELECTION RULE (the channel's identity — CRITICAL): Most storytelling channels repeat the same handful of over-told stories (Trojan Horse, David vs Goliath, King Midas, Icarus, The Boy Who Cried Wolf, Cinderella, Robin Hood, Noah's Ark, Pandora's Box, The Prodigal Son, The Tortoise and the Hare, etc.). THIS CHANNEL IS DIFFERENT: it tells UNTOLD stories — obscure folklore, legends, and historical episodes from African, European, Asian, and Middle-Eastern traditions that people have rarely or never heard. Pick ONE genuinely lesser-known story from the research (or from a real obscure tradition you know) and tell it in our unique voice with the psychological angle. If the research only surfaces famous stories, dig for the obscure corner of that same tradition instead of defaulting to a classic. The viewer should think "I've never heard this one before" — that is the channel's edge. We have millions of stories to tell.
 
@@ -291,11 +297,13 @@ Then split the script into ${N_SCENES} SCENES (about ${N_SCENES - 2} to ${N_SCEN
 - "action": ONE clear action/pose the scene shows (what is happening)
 - "frames": 4 MICRO-FRAME image-prompt variations of THIS SAME SCENE (SAME background, SAME camera angle, SAME framing — the FRAME is FIXED, pixel-identical background across all frames). This is CONCEPTUAL ILLUSTRATION: only the objects/characters INSIDE the frame change — they may MOVE, APPEAR, or DISAPPEAR as the narration describes (a ball is removed, a second person steps away, a flag appears, an object pops into the scene). e.g. frame 1 = base pose, frame 2 = a character moves / hand raises / eyebrow furrows, frame 3 = an object pops in or a prop changes state (a door cracks open, a candle gutters), frame 4 = an object disappears or a small expression shift / climactic detail (light spills in, a document is revealed). The camera NEVER moves and the composition NEVER changes between frames — the background must remain pixel-identical across all 4 frames; only the characters/props inside the fixed frame mutate.
 
-TITLE SPEC (CRITICAL — the channel's click psychology, 2026-08-31): Humans are curious creatures; long-form channels win by opening a LOOP in the title that the video closes. The "title" MUST be a CURIOSITY-GAP hook, ideally a WHY-question:
-  - "Why the Most Loyal Man in History Was Erased"
-  - "Why We Fear the Truth More Than Death"
-  - "Why the Winner of That War Was Never Celebrated"
-Rules: (1) START with a curiosity word — preferably "Why", else "How", "What Nobody Tells You", "The Real Reason", "The Surprising Reason"; (2) be SPECIFIC to THIS story (name the person / place / event / object); (3) open an INFORMATION GAP — it promises a mechanism, reason, or answer the viewer must watch to get; (4) NO clickbait lies — the story genuinely delivers the promise; (5) 6-12 words, no quotes, no punctuation games. This title is ALSO used on the thumbnail, so keep it punchy.
+TITLE SPEC (CRITICAL — user directive 2026-09-09): the channel STOPPED using the long "Why ..." question titles. The "title" is now a SHORT MYSTERY TITLE:
+  - MAX 4 words (2-4 words ideal; never more).
+  - NEVER start with "Why", "How", "What", "Who", "The Real Reason", "The Truth About" or any question opener.
+  - SHROUDED IN MYSTERY but HONEST: it names the story's ICONIC object / place / person / hinge so the viewer knows what the video is about, while the twist, the lesson or the outcome stays hidden. The click opens the loop the story then closes.
+  - Specific and intriguing enough that someone WANTS to open it — like a secret they have to unwrap.
+  - No full sentences, no question marks, no punctuation games, no clickbait lies (the story must genuinely deliver).
+Style shapes that work (2-4 words): "<iconic object> of <stakes>" (e.g. "Bowl of Buried Peace"), "<place/person>'s <hidden thing>" (e.g. "The Queen's Second Grave"), a bare evocative noun phrase for the pivotal object/event (e.g. "The Unpaid Watchman"). This title is ALSO used on the thumbnail, so keep it short and bold.
 
 Return STRICT JSON ONLY:
 {"title":"...","topic":"...","theme":"...","script":"<full script text>","chapters":[{"label":"...","act":1}],"scenes":[{"n":1,"label":"...","narration":"...","setting":"...","characters":"...","action":"...","frames":["frame1 img prompt","frame2 img prompt","frame3 img prompt"]}]}`;
@@ -308,9 +316,18 @@ async function generate({ theme, outDir }) {
   const category = st.category || null; // set by pickTheme (playlist category)
   saveState(st);
   console.log(`[v10script] theme: ${useTheme} (category: ${category || "n/a"})`);
+  // GOOGLE TRENDS "human pulse" (best-effort, never breaks the build): tells the
+  // writer what people are searching for RIGHT NOW so it picks an obscure story
+  // whose psychological angle resonates today. Niche + 4-act style stay intact.
+  let sparks = [];
+  try {
+    const { trendingTerms } = require("../../llm/googleTrends.js");
+    sparks = await trendingTerms({ maxTotal: 30 });
+  } catch (e) { console.warn("[v10script] trends unavailable:", e.message); }
+  console.log(`[v10script] trends pulses: ${sparks.length}`);
   const researchText = await research(useTheme);
   console.log(`[v10script] research: ${researchText.length} chars`);
-  let data = await callGemini(buildPrompt(useTheme, researchText));
+  let data = await callGemini(buildPrompt(useTheme, researchText, sparks));
   data = sanitizeData(data); // defensive: kill any leaked [markers]/emoji before voice+captions
   console.log(`[v10script] got ${(data.scenes || []).length} scenes, title="${data.title}"`);
 

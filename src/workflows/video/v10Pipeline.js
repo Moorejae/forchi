@@ -312,7 +312,7 @@ async function runOnce({ runId, theme, dryRun = false, buildOnly = false, notify
           // v10Metadata.js exactly like the assemble/upload stages do. Every build
           // died here with "v10 is not defined" and shipped without a thumbnail.)
           const v10m = require("./v10Metadata.js");
-          const hookTitle = v10m.buildV10CuriosityTitle(meta.title, meta);
+          const hookTitle = v10m.buildV10MysteryTitle(meta.title, meta);
           py(["tools/_v10_thumbnail.py", mp4, "--title", hookTitle.slice(0, 60), "--out", thumb, "--at", "30"]);
         } else if (stage === "upload") {
           if (dryRun || buildOnly) {
@@ -380,7 +380,7 @@ async function uploadStage(runDir, mp4, thumb, rid) {
   }
   const chapters = v10.buildChapters(timeline);
 
-  const baseTitle = v10.buildV10CuriosityTitle(meta.title, meta); // "WHY" curiosity-gap hook
+  const baseTitle = v10.buildV10MysteryTitle(meta.title, meta); // short mystery name (<=4 words, no Why)
   const title = v10.buildV10Title(baseTitle);
   const description = v10.buildV10Description({ baseTitle, chapters, script: meta.script, seed: Date.now() % 100000 });
 

@@ -1,8 +1,9 @@
-// ForChi V10 WATCHDOG — wires the two-slot V10 scheduler to the real pipeline.
+// ForChi V10 WATCHDOG — wires the daily V10 scheduler (one video/day, 2pm WAT)
+// to the real pipeline.
 //
-// Runs forever (systemd): every scheduler tick, if a slot's BUILD time is due it
+// Runs forever (systemd): every scheduler tick, if the slot's BUILD time is due it
 // runs the V10 pipeline in build-only mode (Vertex images + Contabo voice, off
-// HF), and when a slot's PUBLISH time is due it uploads the pre-built run.
+// HF), and when the PUBLISH time is due it uploads the pre-built run.
 //
 // Usage:
 //   node src/workflows/video/v10Watchdog.js            (start the watchdog)
@@ -76,7 +77,7 @@ if (cmd === "on" || cmd === "off" || cmd === "status" || cmd === "now") {
   });
 } else {
   sched.startV10Scheduler({ buildFn, publishFn }, { notify });
-  console.log("[v10watch] V10 watchdog started (build 7:00/13:00 -> publish 12:00/17:00 WAT)");
+  console.log("[v10watch] V10 watchdog started (daily: build 8:00 -> publish 14:00 WAT)");
   // The scheduler's internal interval is unref'd (so a CLI `node v10Scheduler.js`
   // can exit cleanly). As a systemd daemon we MUST keep the event loop alive.
   const keepalive = setInterval(() => {}, 60 * 1000);

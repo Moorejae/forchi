@@ -6,6 +6,10 @@ Lexicon: shadow, ego, contrast, graveyard, monster, morals, ruthless, wicked, he
 """
 import urllib.request, json, re, os
 from _paths import BASE
+try:
+    from _google_trends import fetch_trend_sparks
+except Exception:  # trends helper is best-effort; never break the Shorts
+    fetch_trend_sparks = lambda *a, **k: []
 
 PERSONA_PROMPT = """You are the writer for a philosophical YouTube Short channel. The persona is "Victor Moore" — a deep, slow, somber voice of reason who writes romantic, faith-tinged poetry about love and human nature.
 
@@ -48,7 +52,7 @@ STRUCTURE (follow exactly):
 STYLE RULES (mandatory):
 - 75-110 words total (about 35-45 seconds spoken slowly). Aim for a complete piece — do not be brief.
 - Deep baritone pacing: mix short punchy sentences (4-12 words) with one or two long flowing ones.
-- Use the lexicon naturally: shadow, ego, contrast, grace, quiet, sleep, remember, never, faith, love, time, soul, dark, light, truth, wait, rest.
+- Use the lexicon sparingly: the words shadow, ego, contrast, grace, quiet, sleep, remember, never, faith, love, time, soul, dark, light, truth, wait, rest are SEASONING, not the meal. Use at most 2-3 of them per piece. The poem must be built mostly from FRESH vocabulary, images and objects each time.
 
 OPENING VARIETY (CRITICAL — the channel was sounding repetitive):
 - NEVER start with "We are told that", "We are taught that", "We often", or any "We are ___ that ___" formula.
@@ -176,6 +180,50 @@ def _avoid_context(history, max_scripts=8):
             'do not reuse their metaphors):\n' + '\n'.join(lines) + '\n')
 
 
+# ── Google Trends sparks + WORD FRESHNESS (user directive 2026-09-09) ────────
+# The Shorts kept repeating the same words/images (storm, door, dark, light, quiet,
+# shadow...). We now (a) seed each poem's imagery from what people are ACTUALLY
+# searching today (Google Trends) so it explores NEW words, and (b) tell the writer
+# which words recent poems have saturated so it stops leaning on them. The Victor
+# Moore persona + romantic/faith poetry stay untouched — only the vocabulary opens up.
+_STOP = set('about above after again against all am an and any are as at be because been before being between but by can could did do does doing down during each few for from further had has have having he her here hers herself him himself his how i if in into is it its itself just me more most my myself no nor not now of off on once only or other our ours ourselves out over own same she should so some such than that the their theirs them themselves then there these they this those through to too under until up very was we were what when where which while who whom why will with you your yours yourself the a an'.split())
+
+
+def _repeated_words(history, n=22):
+    """Most-saturated content words across the most recent poems (for the freshness guard)."""
+    from collections import Counter
+    c = Counter()
+    for h in history[-50:]:
+        for w in re.findall(r"[A-Za-z']+", (h.get('script') or '').lower()):
+            if len(w) >= 4 and w not in _STOP and not w.endswith("'s"):
+                c[w] += 1
+    return [w for w, _ in c.most_common(n)]
+
+
+def _today_context(history):
+    """One prompt block: today's search sparks (fresh imagery seeds) + word freshness guard."""
+    sparks = fetch_trend_sparks()
+    lines = []
+    if sparks:
+        lines.append('TODAY\'S HUMAN PULSE — what people are actually searching for right now (Google Trends). '
+                     'Inspiration ONLY: NEVER name any real person, event, place or brand in the poem.')
+        lines.append('Searching today: ' + ', '.join(sparks[:14]))
+        lines.append('Extract the EMOTION/IDEA behind 1-3 of these (a rivalry, a comeback, a farewell, an '
+                     'underdog, loyalty, a public secret, waiting for someone, fear of loss, pride before a fall) '
+                     'and turn it into a FRESH central image/object for the poem that this channel has NOT used '
+                     'before (a jersey left unwashed, a scoreboard nobody updates, a train that still lists a name...).')
+    else:
+        lines.append('(Google Trends unavailable today — invent fully fresh imagery, objects and vocabulary of your own.)')
+    over = _repeated_words(history)
+    if over:
+        lines.append('')
+        lines.append('WORD FRESHNESS (HARD RULE): recent poems saturated these words — use each at most once or skip: '
+                     + ', '.join(over))
+        lines.append('The persona lexicon words (shadow, storm, light, dark, door, quiet, grace, faith, soul, wait, rest...) '
+                     'may appear only sparingly. MOST of the poem\'s words must be NEW — force fresh vocabulary and imagery.')
+    return '\n'.join(lines)
+
+
 def generate_script(model='gemini-3.6-flash', topic=None, style=None, avoid=None):
     keys = [k for k in _keys() if k.startswith('AQ.')]
     prompt = PERSONA_PROMPT
@@ -223,8 +271,11 @@ def generate_script_checked(model='gemini-3.6-flash', topic=None, style=None, mi
     history = _load_history()
     if topic is None:
         topic = _next_topic(history)
+    # Google Trends sparks + word-freshness (user directive 2026-09-09)
+    today = _today_context(history)
     avoid = _avoid_context(history)
-    text = generate_script(model=model, topic=topic, style=style, avoid=avoid)
+    guard = ((today + '\n') if today else '') + (avoid if avoid else '')
+    text = generate_script(model=model, topic=topic, style=style, avoid=guard)
 
     # expand rounds (Gemini truncates to ~40-50 words by default)
     for rnd in range(max_rounds):
@@ -266,7 +317,7 @@ def generate_script_checked(model='gemini-3.6-flash', topic=None, style=None, mi
         reason = 'banned opening ("We are told/taught/often…")' if _banned_opening(text) else f'sim={_max_similarity(text, history):.2f}'
         print(f'  [script] rejected ({reason}) -> rewriting (try {dup_tries})', flush=True)
         text = generate_script(model=model, topic=topic, style=style,
-                               avoid=avoid + '\nYour previous attempt was too close to an earlier post or used a banned opening. Write something entirely new.\n')
+                               avoid=guard + '\nYour previous attempt was too close to an earlier post or used a banned opening. Write something entirely new.\n')
 
     # record to history (never repeat)
     history.append({'script': text.strip(), 'topic': topic, 'style': style, 'ts': int(time.time())})

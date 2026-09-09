@@ -16,7 +16,7 @@ ForChi is Victor's autonomous social media, video, and job-application agent —
 - **LinkedIn** posts alternate two formats: the **08:00 slot is a job-seeking post** addressed to hiring managers and people who know them (what Victor does, what he wants, the company type, who to connect him to, how to help); the **16:00 slot is a build-in-public project showcase** (real builds incl. Milo and CLAY, real failures, agentic tools, `.env`/`.gitignore` hygiene) — both ending with **high-converting hashtags**.
 - Every post carries a **styled image** (melancholic anime/lo-fi for Facebook, cyberpunk mecha biomechanical for LinkedIn) generated on **FLUX.1-dev**.
 - **Chat** and **voice notes** are handled with fast, free LLM/transcription.
-- **Runs a full long-form YouTube automation pipeline** (channel @sirxlud): AI scripts, voice-cloned narration, AI images, subtitles, thumbnails, auto-upload — up to 2 videos/day.
+- **Runs a full long-form YouTube automation pipeline** (channel @sirxlud): AI scripts, voice-cloned narration, AI images, thumbnails, auto-upload — one long-form video/day.
 - **Runs an autonomous job-application workflow**: discovers intern/junior roles (cloud security, DevOps, AI integration, workflow automation, API integration), scores them, writes tailored resumes + cover letters, and auto-applies to ATS portals.
 - Can be paused/resumed from Telegram: *"turn on auto mode"* / *"switch off auto mode"*.
 
@@ -114,11 +114,11 @@ Telegram voice (.ogg) → **Gemini direct transcription** (no ffmpeg needed) →
 - Keys in env: `SERPER_API_KEY`, `EXA_API_KEY`, `FIRECRAWL_API_KEY`, `TAVILY_API_KEY` (note: Tavily key was 401, kept last).
 
 ### 4.11 V10 long-form YouTube automation (channel @sirxlud)
-- **End-to-end pipeline** (`src/workflows/video/v10Pipeline.js`): script -> scene design -> voice -> images -> assemble -> thumb -> upload, up to **2 videos/day** (build 08:00/16:00 WAT, publish 14:00/20:00 WAT = 2pm/8pm Nigerian time via `v10Scheduler.js`).
-- **Script generation** (`v10ScriptGen.js`): theme rotation across 5 playlists (Church & Bible, Family, World Folklore, Love & Relationships, Book Summaries), search-grounded obscure folklore, 4-act structure with a 5-beat retention arc, and curiosity-gap **"Why..." titles** (never clickbait; never "watch till the end").
+- **End-to-end pipeline** (`src/workflows/video/v10Pipeline.js`): script -> scene design -> voice -> images -> assemble -> thumb -> upload, **ONE video/day** via `v10Scheduler.js` (USER DIRECTIVE 2026-09-09: build 08:00 WAT -> publish 14:00 WAT = **2pm Nigerian time**, exact time, no jitter; the old 2/day 12:00+17:00 schedule is retired).
+- **Script generation** (`v10ScriptGen.js`): theme rotation across 5 playlists (Church & Bible, Family, World Folklore, Love & Relationships, Book Summaries), search-grounded obscure folklore, 4-act structure with a 5-beat retention arc, Google-Trends "human-pulse" angle selection (`src/llm/googleTrends.js`), and **SHORT MYSTERY titles** (<=4 words, NO "Why"/"Y." question hooks — USER DIRECTIVE 2026-09-09; never clickbait; never "watch till the end").
 - **Voice cloning** (Higgs Audio v3 TTS on HF ZeroGPU, `forchi_higgs_tts3_space/app.py`): baked-in "Victor Moore (clean)" persona; consistent voice enforced by fixed seed + Higgs-only retries before any fallback.
 - **AI visuals**: Google image model scene designer + Vertex AI / Gemini image generation with a consistent narrator character; frames assembled with word-synced timing.
-- **Subtitles & "why" captions (2026-09-01)**: subtitles are **burned into the video** (bottom captions synced to each shot via `textfile=` drawtext — safe for any narration) plus the "Why" hook over the opening seconds; the SRT caption track is also uploaded to YouTube.
+- **On-screen captions (2026-09-06)**: burned-in kinetic subtitles were removed ENTIRELY (clean video, no on-screen text). The video title on YouTube + thumbnail is the short mystery name; the SRT caption track is still uploaded to YouTube for accessibility.
 - **YouTube Data API v3**: upload, custom thumbnail, captions, auto-sort into topic playlists; OAuth with an automatic weekly re-auth watcher.
 
 ---
@@ -205,7 +205,7 @@ src/
 
 ## 9. Jobs Workflow — Autonomous Job Discovery & Application Agent
 
-**Status:** BUILT & LIVE (v3.3, 2026-09-01) — running on **constant auto** alongside the social and video workflows. ForChi now runs **THREE autonomous workflows**: (1) **Social** — "Fickle youth" Facebook posts (2×/day) + LinkedIn job-seeking & project-showcase posts (2×/day); (2) **Video** — the V10 long-form YouTube pipeline (2 videos/day); (3) **Jobs (this section)** — discovers remote intern/junior roles matching Victor's real profile, scores them, writes human-sounding cover letters + tailored resumes, and **auto-applies** to trusted ATS portals. A Telegram digest of applications lands every day at **20:00 WAT**. Full detail lives in `ForChi_Jobs_Blueprint.md`.
+**Status:** BUILT & LIVE (v3.3, 2026-09-01) — running on **constant auto** alongside the social and video workflows. ForChi now runs **THREE autonomous workflows**: (1) **Social** — "Fickle youth" Facebook posts (2×/day) + LinkedIn job-seeking & project-showcase posts (2×/day); (2) **Video** — the V10 long-form YouTube pipeline (1 video/day, 2pm WAT); (3) **Jobs (this section)** — discovers remote intern/junior roles matching Victor's real profile, scores them, writes human-sounding cover letters + tailored resumes, and **auto-applies** to trusted ATS portals. A Telegram digest of applications lands every day at **20:00 WAT**. Full detail lives in `ForChi_Jobs_Blueprint.md`.
 
 ### Why it works
 - The major modern ATS — **Greenhouse, Lever, Workable, Ashby** — serve public postings **and** public application endpoints, so submissions can be made with a plain HTTP POST (multipart: resume PDF + fields + answers) like a human browser.
@@ -274,7 +274,7 @@ scheduler.js    # CONSTANT AUTO loop (every 30 min) + daily 20:00 WAT report
 ## 10. Next Steps / Recommendations
 
 1. **Let the strict job filter run for a few days** and confirm the queue stays high-quality (DevOps/SRE domain just added 2026-09-01); tune `LEVEL_TERMS`/domain clusters if coverage is too thin or too noisy.
-2. **Watch the V10 daily videos** for the new burned-in subtitles + "Why" hook captions; verify the narration now always finishes its final sentence (max-token + truncation guards shipped 2026-09-01).
+2. **Watch the V10 daily videos** for the new short mystery titles (<=4 words, no "Why") and the Google-Trends-fed topics; verify the narration now always finishes its final sentence (max-token + truncation guards shipped 2026-09-01).
 3. **Verify first auto-post with new image styles** after next scheduled slot.
 4. **Optional:** re-run the reference-style test (`tools/test_ref_styles.js`) and tune prompts if the art type is slightly off.
 5. **Optional:** fix the own ZeroGPU Space (`slymun/forchi-img`) if desired — it's a backup now; hosted FLUX is primary.
