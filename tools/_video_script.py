@@ -245,6 +245,7 @@ def generate_script(model='gemini-3.6-flash', topic=None, style=None, avoid=None
         'generationConfig': {'temperature': 0.9, 'maxOutputTokens': 1500},
     }).encode()
     last_err = None
+    transient_codes = {429, 500, 502, 503, 504}
     for key in keys:
         url = f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}'
         req = urllib.request.Request(url, data=body, headers={'Content-Type': 'application/json', 'User-Agent': 'forchi'})
@@ -255,7 +256,8 @@ def generate_script(model='gemini-3.6-flash', topic=None, style=None, avoid=None
             return text
         except urllib.error.HTTPError as e:
             last_err = f'{e.code}'
-            if e.code == 429:
+            if e.code in transient_codes:
+                print(f'  [script] Gemini key transient failure ({e.code}) -> trying next key', flush=True)
                 continue
             raise
         except Exception as e:

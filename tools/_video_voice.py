@@ -398,6 +398,9 @@ def render_script(text, out_dir, mode='clean', client=None, resume=True,
                     client = get_client(timeout_min=8)
                 except HiggsUnavailable as e:
                     print(f'  [higgs] {e} — giving up on Higgs for this script', flush=True)
+                    if contabo_available():
+                        print('  [voice] Higgs unavailable; falling back to Contabo CPU worker for this script', flush=True)
+                        return render_contabo(text, out_dir, mode=mode, seed=seed, max_len=max_len)
                     raise SystemExit('higgs space not ready (all self-heal attempts failed)')
                 space_restarted = True
                 for attempt in range(4):
@@ -412,6 +415,9 @@ def render_script(text, out_dir, mode='clean', client=None, resume=True,
                         print(f'  [higgs] phrase {i} post-heal attempt {attempt+1}: {str(e)[:60]}', flush=True)
                         time.sleep(10)
             if not ok:
+                if contabo_available():
+                    print(f'  [voice] phrase {i} failed on Higgs after retries — falling back to Contabo CPU worker for this script', flush=True)
+                    return render_contabo(text, out_dir, mode=mode, seed=seed, max_len=max_len)
                 raise SystemExit(f'phrase {i} failed')
         tighten_silences(raw)  # cap Higgs mid-sentence pauses (fixes broken phrasing)
         results.append({'index': i, 'text': ph, 'wav': raw, 'mode': mode})
